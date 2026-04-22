@@ -1,0 +1,137 @@
+name: Bug Report
+description: Report a bug or unexpected behavior in Merlin
+title: "[BUG] "
+labels: ["bug"]
+assignees:
+  - djunekz
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## 🐛 Bug Report
+        Thanks for taking the time to report a bug! Please fill out the form below as completely as possible.
+        > ⚠️ **Do not report security vulnerabilities here.** See [SECURITY.md](../SECURITY.md) for responsible disclosure.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is.
+      placeholder: Describe what went wrong...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: Step-by-step instructions to reproduce the issue.
+      placeholder: |
+        1. Run `bash merlin.sh`
+        2. Choose option [...]
+        3. Enter URL `...`
+        4. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+      placeholder: Describe what should have happened...
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior / Error Output
+      description: What actually happened? Paste the full terminal output or error below.
+      render: shell
+      placeholder: Paste error output here...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      description: Where are you running Merlin?
+      options:
+        - Termux (Android)
+        - Linux — Debian / Ubuntu
+        - Linux — Arch / Manjaro
+        - Linux — Fedora / RHEL
+        - Linux — Other
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: os_version
+    attributes:
+      label: OS / Android Version
+      description: e.g. Android 13, Ubuntu 22.04, Arch rolling
+      placeholder: "e.g. Android 13 / Ubuntu 22.04"
+    validations:
+      required: true
+
+  - type: input
+    id: python_version
+    attributes:
+      label: Python Version
+      description: Run `python --version` or `python3 --version`
+      placeholder: "e.g. Python 3.11.2"
+    validations:
+      required: true
+
+  - type: input
+    id: merlin_version
+    attributes:
+      label: Merlin Version
+      description: Check the banner when launching merlin, or see `core/merlinset.py`
+      placeholder: "e.g. 1.0.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: affected_module
+    attributes:
+      label: Affected Module
+      description: Which part of Merlin is affected?
+      options:
+        - merlin.sh (launcher)
+        - install.sh (installer)
+        - Main menu (merlin.py)
+        - WP Vuln (wpvuln.py)
+        - SQLi Scan (websqli.py)
+        - WebShake (webshake.py)
+        - Web Analyzer (webanalyst.py)
+        - Settings / Config (merlinconf.py)
+        - Update Checker (merlinup.py)
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other context, screenshots, or information that might help.
+      placeholder: Add anything else here...
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I have searched existing issues and this is not a duplicate
+          required: true
+        - label: I am running the latest version of Merlin
+          required: true
+        - label: I have read the README and followed the installation steps correctly
+          required: true
