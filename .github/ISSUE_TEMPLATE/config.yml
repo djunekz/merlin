@@ -1,0 +1,21 @@
+blank_issues_enabled: false
+
+contact_links:
+  - name: 💬 Ask a Question / General Discussion
+    url: https://github.com/djunekz/merlin/discussions
+    about: >
+      Not a bug or feature request? Use Discussions for questions,
+      ideas, or general conversation about Merlin.
+
+  - name: 🔐 Report a Security Vulnerability
+    url: https://github.com/djunekz/merlin/security/advisories/new
+    about: >
+      Please do NOT open a public issue for security vulnerabilities.
+      Use GitHub Security Advisories for responsible disclosure.
+      See SECURITY.md for our full policy.
+
+  - name: 📖 Read the Documentation
+    url: https://github.com/djunekz/merlin#readme
+    about: >
+      Check the README for installation instructions, usage guide,
+      configuration options, and project structure.
