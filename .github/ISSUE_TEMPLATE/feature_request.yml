@@ -1,0 +1,107 @@
+name: Feature Request
+description: Suggest a new feature or improvement for Merlin
+title: "[FEATURE] "
+labels: ["enhancement"]
+assignees:
+  - djunekz
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## ✨ Feature Request
+        Got an idea to make Merlin better? Fill out the form below.
+        Please check [existing issues](https://github.com/djunekz/merlin/issues) first to avoid duplicates.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Feature Summary
+      description: A short, clear description of the feature you want.
+      placeholder: "e.g. Add JSON export for scan results"
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / Motivation
+      description: What problem does this feature solve? Why do you need it?
+      placeholder: |
+        e.g. I always have to manually copy scan results from the terminal.
+        An export option would save a lot of time.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe what you'd like to happen. Be as specific as possible.
+      placeholder: |
+        e.g. After a scan completes, prompt the user:
+        "Save results? [y/n]"
+        If yes, save a JSON file to the output_dir defined in config.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Have you tried any workarounds or alternative approaches?
+      placeholder: "e.g. I tried piping output with `| tee`, but colors break the file..."
+    validations:
+      required: false
+
+  - type: dropdown
+    id: affected_module
+    attributes:
+      label: Which module would this affect?
+      description: Select the most relevant module. Select "New module" if this needs a new file.
+      options:
+        - merlin.sh (launcher)
+        - install.sh (installer)
+        - Main menu (merlin.py)
+        - WP Vuln (wpvuln.py)
+        - SQLi Scan (websqli.py)
+        - WebShake (webshake.py)
+        - Web Analyzer (webanalyst.py)
+        - Settings / Config (merlinconf.py)
+        - Update Checker (merlinup.py)
+        - New module
+        - Multiple / unsure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: How important is this to you?
+      options:
+        - Nice to have
+        - Would improve my workflow significantly
+        - Blocking — I can't use Merlin effectively without this
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Mockups, examples from other tools, terminal output, or anything else useful.
+      placeholder: Add screenshots, links, or examples here...
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I have searched existing issues and this is not a duplicate
+          required: true
+        - label: This feature does not bypass ethical use safeguards
+          required: true
+        - label: I am willing to help implement or test this feature
+          required: false
