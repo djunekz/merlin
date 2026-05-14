@@ -1,10 +1,11 @@
 import os, sys, subprocess
 from merlinset import *
 from merlincolor import *
+from __init__ import __version__, __github__, __repo_clone__
 
-REPO_URL    = "https://github.com/djunekz/merlin"
-REPO_CLONE  = "https://github.com/djunekz/merlin.git"
-CURRENT_VER = "1.0.0"
+REPO_URL    = __github__
+REPO_CLONE  = __repo_clone__
+CURRENT_VER = __version__
 
 def check_git():
     try:
@@ -17,7 +18,7 @@ def get_remote_version():
     try:
         result = subprocess.run(
             ['git', 'ls-remote', '--tags', REPO_CLONE],
-            capture_output=True, text=True, timeout=10
+            capture_output=True, text=True, timeout=15
         )
         lines = result.stdout.strip().splitlines()
         tags = []
@@ -29,7 +30,12 @@ def get_remote_version():
         if tags:
             return tags[-1]
         return None
-    except Exception:
+    except subprocess.TimeoutExpired:
+        print(err + ' Connection timed out while checking remote version.')
+        return None
+    except Exception as e:
+        if os.environ.get('MERLIN_VERBOSE'):
+            print(err + ' get_remote_version error: ' + str(e))
         return None
 
 def do_update():
@@ -43,11 +49,12 @@ def do_update():
         try:
             result = subprocess.run(
                 ['git', 'pull', 'origin', 'main'],
-                capture_output=True, text=True, timeout=30
+                capture_output=True, text=True, timeout=60
             )
             if result.returncode == 0:
                 print(sukses + ' Update successful!')
-                print('  ' + DG + result.stdout.strip() + N)
+                if result.stdout.strip():
+                    print('  ' + DG + result.stdout.strip() + N)
             else:
                 print(err + ' Update failed:')
                 print('  ' + R + result.stderr.strip() + N)
@@ -70,11 +77,13 @@ def check_update():
     if not check_git():
         print(err + ' Git not found, cannot check for updates.')
         print(note + ' Install git: ' + Y + 'pkg install git' + N)
+        print(LY + '---------------------------------------------------------------' + N)
         return
 
     remote = get_remote_version()
     if remote is None:
         print(warning + ' Unable to connect to GitHub. Check your internet connection.')
+        print(LY + '---------------------------------------------------------------' + N)
         return
 
     print(note + ' Latest version  : ' + LM + remote + N)
@@ -85,7 +94,12 @@ def check_update():
     else:
         print(info + ' New version available: ' + LG + remote + N)
         print(note + ' Update now? ' + G + '[y/n]' + N)
-        jawab = input(LG + '┌──[' + LY + 'termux@localhost' + LG + ']─[' + W + '~/merlin_update' + LG + ']\n└─' + LY + '$ ' + W)
+        try:
+            jawab = input(LG + '┌──[' + LY + 'termux@localhost' + LG + ']─[' + W + '~/merlin_update' + LG + ']\n└─' + LY + '$ ' + W)
+        except (EOFError, KeyboardInterrupt):
+            print(note + ' Update cancelled.')
+            print(LY + '---------------------------------------------------------------' + N)
+            return
         if jawab.lower() in ('y', 'yes'):
             do_update()
         else:

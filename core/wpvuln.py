@@ -2,50 +2,60 @@ import requests
 from bs4 import BeautifulSoup
 import re
 import argparse
-from urllib.parse import urljoin, urlparse
 import json
 import time
-from datetime import datetime
 import os
 import sys
+from datetime import datetime
+from urllib.parse import urljoin, urlparse
 from rich.console import Console
 from rich.table import Table
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from merlinlogo import *
 from merlinset import *
-from merlinconf import *
+from merlinconf import TIMEOUT, USER_AGENT, OUTPUT_DIR, SAVE_REPORTS, VERIFY_SSL, MAX_RETRIES
 
 console = Console()
 
 class WPAdminVulnerabilityScanner:
 
-    def __init__(self, target_url, output_file=None, timeout=10, user_agent=None):
+    def __init__(self, target_url, output_file=None, timeout=TIMEOUT, user_agent=USER_AGENT):
         if not target_url.endswith('/'):
             target_url += '/'
-        self.target_url = target_url
-        self.wp_admin_url = urljoin(self.target_url, 'wp-admin/')
+        self.target_url    = target_url
+        self.wp_admin_url  = urljoin(self.target_url, 'wp-admin/')
         self.login_page_url = urljoin(self.wp_admin_url, 'wp-login.php')
-        self.session = requests.Session()
-        self.timeout = timeout
-        self.output_file = output_file
+        self.wp_json_url   = urljoin(self.target_url, 'wp-json/wp/v2/')
+        self.session       = requests.Session()
+        self.timeout       = timeout
+        self.output_file   = output_file
         self.vulnerabilities_found = []
-        self.start_time = datetime.now()
-        self.user_agent = user_agent if user_agent else "WP-Admin-Vulnerability-Scanner/1.0 (Python Security Tool)"
+        self.info_gathered = {}
+        self.start_time    = datetime.now()
+        self.user_agent    = user_agent
         self.session.headers.update({'User-Agent': self.user_agent})
-        console.print(f"[bold blue]Inisialisasi Pemindai untuk:[/bold blue] [bold green]{self.target_url}[/bold green]")
-        console.print(f"[bold blue]Halaman wp-admin:[/bold blue] [cyan]{self.wp_admin_url}[/cyan]")
+        console.print(f"[bold blue]Initialising scanner for:[/bold blue] [bold green]{self.target_url}[/bold green]")
 
-    def _make_request(self, url, method='GET', data=None, allow_redirects=True, verify_ssl=True):
-        try:
-            if method.upper() == 'GET':
-                response = self.session.get(url, timeout=self.timeout, allow_redirects=allow_redirects, verify=verify_ssl)
-            elif method.upper() == 'POST':
-                response = self.session.post(url, data=data, timeout=self.timeout, allow_redirects=allow_redirects, verify=verify_ssl)
-            response.raise_for_status()
-            return response
-        except requests.exceptions.RequestException as e:
-            console.print(f"[bold red]ERROR:[/bold red] Gagal mengakses [cyan]{url}[/cyan]: {e}", style="dim")
-            return None
+    def _make_request(self, url, method='GET', data=None, allow_redirects=True, retries=MAX_RETRIES):
+        for attempt in range(retries):
+            try:
+                if method.upper() == 'GET':
+                    response = self.session.get(url, timeout=self.timeout,
+                                                allow_redirects=allow_redirects, verify=VERIFY_SSL)
+                elif method.upper() == 'POST':
+                    response = self.session.post(url, data=data, timeout=self.timeout,
+                                                 allow_redirects=allow_redirects, verify=VERIFY_SSL)
+                return response
+            except requests.exceptions.Timeout:
+                if attempt < retries - 1:
+                    time.sleep(1)
+                else:
+                    console.print(f"[yellow]Timeout accessing {url}[/yellow]")
+                    return None
+            except requests.exceptions.RequestException as e:
+                console.print(f"[bold red]ERROR:[/bold red] {url}: {e}", style="dim")
+                return None
+        return None
 
     def _add_vulnerability(self, name, description, severity, recommended_action, details=None):
         vuln = {
@@ -57,358 +67,329 @@ class WPAdminVulnerabilityScanner:
             "details": details if details else {}
         }
         self.vulnerabilities_found.append(vuln)
-        console.print(f"\n[bold yellow]KERENTANAN DITEMUKAN:[/bold yellow] [red]{name}[/red] (Severity: {severity})")
+        console.print(f"\n[bold yellow]VULNERABILITY:[/bold yellow] [red]{name}[/red] (Severity: {severity})")
         console.print(f"  [italic]{description}[/italic]")
 
     def check_wp_admin_access(self):
-        console.print("\n[bold blue]1. Memeriksa Akses wp-admin...[/bold blue]")
+        console.print("\n[bold blue]1. Checking wp-admin access...[/bold blue]")
         response = self._make_request(self.wp_admin_url)
         if response:
-            if response.status_code == 200:
+            if response.status_code in (401, 403):
+                console.print(f"  [green]wp-admin access denied ({response.status_code}). Good.[/green]")
+            elif response.status_code == 200:
                 if "wp-login.php" in response.url or "wp-admin" in response.url:
-                    console.print(f"  [green]Akses ke {self.wp_admin_url} berhasil (Status: {response.status_code}).[/green]")
-                    if "form_login" in response.text or "username" in response.text:
-                         console.print(f"  [green]Kemungkinan halaman login wp-admin ditemukan.[/green]")
-                    else:
-                        console.print(f"  [yellow]Meskipun status 200, tampaknya bukan halaman login wp-admin standar atau ada redireksi.[/yellow]")
-                else:
-                     console.print(f"  [red]Redireksi tidak ke halaman wp-login.php atau wp-admin. Status: {response.status_code}. Ini mungkin indikasi konfigurasi non-standar atau blokir.[/red]")
-            elif response.status_code == 401 or response.status_code == 403:
-                console.print(f"  [green]Akses ke {self.wp_admin_url} ditolak (Status: {response.status_code}). Ini adalah hal yang baik.[/green]")
-            elif response.status_code == 301 or response.status_code == 302:
-                console.print(f"  [yellow]Redireksi ditemukan dari {self.wp_admin_url}. Status: {response.status_code}. Lokasi: {response.headers.get('Location')}[/yellow]")
-                redirect_response = self._make_request(response.headers.get('Location'))
-                if redirect_response and redirect_response.status_code == 200 and "wp-login.php" in redirect_response.url:
-                    console.print(f"  [green]Redireksi mengarah ke halaman login wp-admin yang valid.[/green]")
-                else:
-                     console.print(f"  [yellow]Redireksi mengarah ke halaman yang tidak terduga atau error.[/yellow]")
-            else:
-                console.print(f"  [yellow]Akses ke {self.wp_admin_url} menghasilkan status {response.status_code}. Perlu pemeriksaan manual.[/yellow]")
-                if response.status_code == 200:
+                    console.print(f"  [yellow]wp-admin accessible (200). Login page exposed.[/yellow]")
                     self._add_vulnerability(
-                        "Potensi Akses wp-admin Langsung",
-                        f"Direktori wp-admin dapat diakses langsung dengan status {response.status_code}. Meskipun seringkali mengarah ke halaman login, ini bisa menjadi masalah jika ada file sensitif yang tidak dilindungi.",
+                        "wp-admin Exposed",
+                        "The wp-admin login page is publicly accessible.",
                         "LOW",
-                        "Pastikan tidak ada file yang tidak seharusnya diakses publik di direktori wp-admin. Pastikan hanya halaman login yang bisa diakses."
+                        "Consider IP-restricting /wp-admin/ in .htaccess or Nginx config."
                     )
+                else:
+                    console.print(f"  [yellow]200 but not a standard login page. Investigate manually.[/yellow]")
+            else:
+                console.print(f"  [yellow]Unexpected status: {response.status_code}.[/yellow]")
         else:
-            console.print(f"  [bold red]Gagal mendapatkan respons dari {self.wp_admin_url}.[/bold red]")
-
+            console.print(f"  [bold red]No response from {self.wp_admin_url}.[/bold red]")
 
     def check_login_page_exposure(self):
-        console.print("\n[bold blue]2. Memeriksa Paparan Halaman Login (wp-login.php)...[/bold blue]")
+        console.print("\n[bold blue]2. Checking login page exposure...[/bold blue]")
         response = self._make_request(self.login_page_url)
-        if response:
-            if response.status_code == 200:
-                console.print(f"  [green]Halaman login wp-login.php dapat diakses (Status: {response.status_code}).[/green]")
-                self._add_vulnerability(
-                    "Paparan Halaman Login wp-login.php",
-                    f"Halaman login WordPress (`wp-login.php`) dapat diakses secara publik. Meskipun ini normal, ini juga merupakan titik awal untuk serangan brute-force atau credential stuffing.",
-                    "INFORMATIONAL",
-                    "Pertimbangkan untuk melindungi halaman login dengan autentikasi dua faktor (2FA), membatasi upaya login, atau mengubah URL login secara drastis jika memungkinkan."
-                )
-            else:
-                console.print(f"  [yellow]Halaman login wp-login.php tidak mengembalikan status 200 (Status: {response.status_code}). Ini bisa berarti dilindungi atau tidak ada.[/yellow]")
+        if response and response.status_code == 200:
+            console.print(f"  [yellow]wp-login.php is publicly accessible.[/yellow]")
+            soup = BeautifulSoup(response.text, 'html.parser')
+            if soup.find('form'):
+                console.print("  [yellow]Login form found on the page.[/yellow]")
+        elif response:
+            console.print(f"  [green]wp-login.php returned {response.status_code} — may be protected.[/green]")
         else:
-            console.print(f"  [bold red]Gagal mendapatkan respons dari {self.login_page_url}.[/bold red]")
+            console.print("  [dim]Could not access wp-login.php.[/dim]")
 
     def check_login_form_security(self):
-        console.print("\n[bold blue]3. Memeriksa Keamanan Formulir Login...[/bold blue]")
-        parsed_url = urlparse(self.login_page_url)
-        if parsed_url.scheme != 'https':
-            self._add_vulnerability(
-                "Login Form Over HTTP (Tidak Terenkripsi)",
-                f"Halaman login (`{self.login_page_url}`) diakses menggunakan HTTP (tidak terenkripsi). Ini membuat kredensial rentan terhadap eavesdropping.",
-                "HIGH",
-                "Segera terapkan HTTPS (SSL/TLS) di seluruh situs web, terutama untuk halaman login. Dapatkan sertifikat SSL dari CA terpercaya."
-            )
-            console.print(f"  [bold red]Halaman login diakses melalui HTTP, bukan HTTPS![/bold red]")
-        else:
-            console.print(f"  [green]Halaman login diakses melalui HTTPS. [bold](Bagus!)[/bold][/green]")
-
+        console.print("\n[bold blue]3. Checking login form security...[/bold blue]")
         response = self._make_request(self.login_page_url)
-        if response:
+        if response and response.status_code == 200:
             soup = BeautifulSoup(response.text, 'html.parser')
-            login_form = soup.find('form', {'name': 'loginform'}) or soup.find('form', {'id': 'loginform'})
-            if login_form:
-                action_url = login_form.get('action')
-                if action_url and not action_url.startswith('https://') and parsed_url.scheme == 'https':
-                    self._add_vulnerability(
-                        "Form Action Menggunakan HTTP di Halaman HTTPS",
-                        f"Meskipun halaman login adalah HTTPS, URL 'action' formulir login ({action_url}) menggunakan HTTP. Ini dapat menyebabkan pengiriman kredensial tidak terenkripsi.",
-                        "HIGH",
-                        "Pastikan atribut 'action' dari formulir login juga menggunakan HTTPS."
-                    )
-                    console.print(f"  [bold red]URL 'action' form login menggunakan HTTP, padahal halaman adalah HTTPS![/bold red]")
+            form = soup.find('form')
+            if form:
+                if form.get('action', '').startswith('https'):
+                    console.print("  [green]Form action uses HTTPS.[/green]")
                 else:
-                    console.print(f"  [green]URL 'action' form login tampaknya konsisten dengan HTTPS.[/green]")
-            else:
-                console.print(f"  [yellow]Formulir login tidak ditemukan dengan atribut 'name' atau 'id' standar.[/yellow]")
+                    console.print("  [yellow]Form action does not explicitly use HTTPS.[/yellow]")
+                if not form.find('input', {'name': '_wpnonce'}):
+                    self._add_vulnerability(
+                        "Missing CSRF Nonce on Login Form",
+                        "The login form does not have a nonce field visible, which may indicate CSRF protection is absent.",
+                        "MEDIUM",
+                        "Ensure WordPress nonce is generated on the login form."
+                    )
+                    console.print("  [red]No _wpnonce field found in login form.[/red]")
+                else:
+                    console.print("  [green]CSRF nonce field detected.[/green]")
+        else:
+            console.print("  [dim]Login page not accessible for form analysis.[/dim]")
 
     def check_error_messages(self):
-        console.print("\n[bold blue]4. Memeriksa Pesan Kesalahan Login...[/bold blue]")
-        test_username = "nonexistentuser"
-        test_password = "wrongpassword123"
-        login_data = {
-            'log': test_username,
-            'pwd': test_password,
-            'wp-submit': 'Log In',
-            'redirect_to': self.wp_admin_url
-        }
-
-        response = self._make_request(self.login_page_url, method='POST', data=login_data, allow_redirects=False)
-
+        console.print("\n[bold blue]4. Checking login error message verbosity...[/bold blue]")
+        test_data = {'log': 'nonexistent_user_xyz', 'pwd': 'wrong_pass', 'wp-submit': 'Log In', 'redirect_to': '', 'testcookie': '1'}
+        self.session.cookies.set('wordpress_test_cookie', 'WP Cookie check')
+        response = self._make_request(self.login_page_url, method='POST', data=test_data)
         if response and response.status_code == 200:
-            if "invalid username" in response.text.lower() or "username is not registered" in response.text.lower():
+            if "The password you entered for the username" in response.text or \
+               "Invalid username" in response.text:
                 self._add_vulnerability(
-                    "Pesan Kesalahan 'Username Tidak Ada' yang Terlalu Informatif",
-                    f"Halaman login mengungkapkan apakah nama pengguna itu ada atau tidak. Ini membantu penyerang mengidentifikasi username yang valid untuk serangan brute-force.",
-                    "MEDIUM",
-                    "Konfigurasi WordPress atau plugin keamanan untuk memberikan pesan kesalahan login yang generik (misalnya, 'Kombinasi nama pengguna/kata sandi salah')."
+                    "Verbose Login Error Messages",
+                    "Login errors reveal whether the username or password is wrong, aiding enumeration.",
+                    "LOW",
+                    "Use a generic error message like 'Invalid credentials'."
                 )
-                console.print(f"  [bold red]Mendeteksi pesan kesalahan yang mengungkapkan keberadaan username (mis: 'username tidak ada').[/bold red]")
-            elif "incorrect password" in response.text.lower() or "the password you entered for the username" in response.text.lower():
-                 self._add_vulnerability(
-                    "Pesan Kesalahan 'Kata Sandi Salah' yang Terlalu Informatif",
-                    f"Halaman login mengungkapkan bahwa kata sandi salah setelah username ditemukan valid. Ini juga membantu penyerang.",
-                    "MEDIUM",
-                    "Konfigurasi WordPress atau plugin keamanan untuk memberikan pesan kesalahan login yang generik."
-                )
-                 console.print(f"  [bold red]Mendeteksi pesan kesalahan yang mengungkapkan bahwa password salah setelah username ditemukan valid.[/bold red]")
+                console.print("  [yellow]Verbose error messages detected.[/yellow]")
             else:
-                console.print(f"  [green]Pesan kesalahan login tampaknya tidak terlalu informatif.[/green]")
+                console.print("  [green]No username enumeration detected in error messages.[/green]")
         else:
-            console.print(f"  [yellow]Tidak dapat menguji pesan kesalahan login secara efektif (status: {response.status_code if response else 'N/A'}).[/yellow]")
-
+            console.print("  [dim]Could not test error messages.[/dim]")
 
     def check_robots_txt_wp_admin(self):
-        console.print("\n[bold blue]5. Memeriksa robots.txt untuk wp-admin...[/bold blue]")
-        robots_url = urljoin(self.target_url, 'robots.txt')
+        console.print("\n[bold blue]5. Checking robots.txt for wp-admin entries...[/bold blue]")
+        robots_url = urljoin(self.target_url, '/robots.txt')
         response = self._make_request(robots_url)
         if response and response.status_code == 200:
-            content = response.text
-            disallow_rules = re.findall(r'Disallow:\s*(.*)', content, re.IGNORECASE)
-
-            admin_disallowed = False
-            login_disallowed = False
-
-            for rule in disallow_rules:
-                if 'wp-admin' in rule.lower():
-                    admin_disallowed = True
-                if 'wp-login.php' in rule.lower():
-                    login_disallowed = True
-
-            if admin_disallowed:
-                console.print(f"  [green]robots.txt melarang crawling wp-admin. [bold](Bagus!)[/bold][/green]")
+            if 'wp-admin' in response.text.lower() or 'wp-login.php' in response.text.lower():
+                console.print("  [green]robots.txt has entries for wp-admin / wp-login.php.[/green]")
             else:
                 self._add_vulnerability(
-                    "wp-admin Tidak Dilarang di robots.txt",
-                    f"Direktori wp-admin tidak dilarang untuk di-crawl oleh mesin pencari dalam robots.txt. Ini dapat membuat URL admin lebih mudah ditemukan oleh penyerang melalui pencarian mesin.",
-                    "LOW",
-                    "Tambahkan 'Disallow: /wp-admin/' ke file robots.txt Anda."
-                )
-                console.print(f"  [yellow]robots.txt TIDAK melarang crawling wp-admin. Perhatian![/yellow]")
-
-            if login_disallowed:
-                console.print(f"  [green]robots.txt melarang crawling wp-login.php. [bold](Bagus!)[/bold][/green]")
-            else:
-                self._add_vulnerability(
-                    "wp-login.php Tidak Dilarang di robots.txt",
-                    f"Halaman wp-login.php tidak dilarang untuk di-crawl oleh mesin pencari dalam robots.txt. Meskipun tidak secara langsung menimbulkan kerentanan, ini memudahkan enumerasi halaman login.",
+                    "wp-login.php Not Disallowed in robots.txt",
+                    "robots.txt does not disallow /wp-login.php, making it easier for bots to find.",
                     "INFORMATIONAL",
-                    "Pertimbangkan untuk menambahkan 'Disallow: /wp-login.php' ke file robots.txt Anda."
+                    "Add 'Disallow: /wp-login.php' to robots.txt."
                 )
-                console.print(f"  [yellow]robots.txt TIDAK melarang crawling wp-login.php. Perhatian![/yellow]")
+                console.print("  [yellow]robots.txt does NOT restrict wp-login.php.[/yellow]")
         else:
-            console.print(f"  [yellow]Tidak dapat mengakses robots.txt (status: {response.status_code if response else 'N/A'}) atau tidak ada.[/yellow]")
-            console.print(f"  [italic dim]Tidak adanya robots.txt bukan kerentanan, tetapi tidak ada informasi Disallow.[/italic dim]")
+            console.print("  [dim]robots.txt not accessible.[/dim]")
 
     def check_directory_listing(self):
-        console.print("\n[bold blue]6. Memeriksa Directory Listing di Subdirektori wp-admin...[/bold blue]")
-        common_subdirs = ['css/', 'js/', 'images/', 'includes/', 'maint/', 'network/', 'options-general.php']
-
-        for subdir in common_subdirs:
+        console.print("\n[bold blue]6. Checking directory listing in wp-admin...[/bold blue]")
+        for subdir in ['css/', 'js/', 'images/', 'includes/']:
             test_url = urljoin(self.wp_admin_url, subdir)
             response = self._make_request(test_url)
             if response:
-                if response.status_code == 200 and ("Index of /" in response.text or "<title>Index of" in response.text):
-                    self._add_vulnerability(
-                        "Directory Listing Diaktifkan",
-                        f"Directory listing diaktifkan untuk '{test_url}'. Ini memungkinkan penyerang melihat daftar semua file dan direktori, yang dapat mengungkap informasi sensitif.",
+                if response.status_code == 200 and "Index of /" in response.text:
+                    self._add_vulnerability("Directory Listing Enabled",
+                        f"Directory listing is open at {test_url}.",
                         "MEDIUM",
-                        "Nonaktifkan directory listing di server web Anda (misalnya, dengan menambahkan `Options -Indexes` di `.htaccess` untuk Apache atau konfigurasi serupa untuk Nginx)."
-                    )
-                    console.print(f"  [bold red]Directory Listing ditemukan di: {test_url}[/bold red]")
+                        "Add 'Options -Indexes' to .htaccess.")
+                    console.print(f"  [bold red]Directory listing at: {test_url}[/bold red]")
                 elif response.status_code == 403:
-                    console.print(f"  [green]Akses ke {test_url} ditolak (Status 403). [bold](Bagus!)[/bold][/green]")
+                    console.print(f"  [green]Access denied (403): {test_url}[/green]")
                 else:
-                    console.print(f"  [dim]Akses ke {test_url} menghasilkan status {response.status_code}. Tidak ada directory listing terlihat.[/dim]")
+                    console.print(f"  [dim]{test_url} → {response.status_code}[/dim]")
+
+    def check_xml_rpc(self):
+        console.print("\n[bold blue]7. Checking xmlrpc.php exposure...[/bold blue]")
+        xmlrpc_url = urljoin(self.target_url, 'xmlrpc.php')
+        response = self._make_request(xmlrpc_url)
+        if response and response.status_code == 200:
+            if 'XML-RPC server accepts POST requests only' in response.text or 'xmlrpc' in response.text.lower():
+                self._add_vulnerability(
+                    "xmlrpc.php Exposed",
+                    "xmlrpc.php is accessible and can be abused for brute-force or DDoS amplification attacks.",
+                    "MEDIUM",
+                    "Disable XML-RPC if not needed: add 'add_filter(\"xmlrpc_enabled\", \"__return_false\");' to functions.php or block via .htaccess."
+                )
+                console.print("  [yellow]xmlrpc.php is publicly accessible.[/yellow]")
             else:
-                console.print(f"  [dim]Gagal mengakses {test_url}.[/dim]")
+                console.print(f"  [green]xmlrpc.php returned {response.status_code} — may be protected.[/green]")
+        elif response:
+            console.print(f"  [green]xmlrpc.php → {response.status_code} (likely protected).[/green]")
+        else:
+            console.print("  [dim]Could not check xmlrpc.php.[/dim]")
+
+    def check_wp_json_user_enum(self):
+        console.print("\n[bold blue]8. Checking WP REST API user enumeration...[/bold blue]")
+        users_url = urljoin(self.wp_json_url, 'users')
+        response = self._make_request(users_url)
+        if response and response.status_code == 200:
+            try:
+                users = response.json()
+                if isinstance(users, list) and users:
+                    names = [u.get('name', '?') for u in users[:5]]
+                    self._add_vulnerability(
+                        "User Enumeration via REST API",
+                        f"WP REST API /wp-json/wp/v2/users exposes usernames: {names}",
+                        "MEDIUM",
+                        "Disable user endpoint: add 'add_filter(\"rest_endpoints\", function($e){ unset($e[\"/wp/v2/users\"]); return $e; });' to functions.php."
+                    )
+                    console.print(f"  [yellow]Users exposed via REST API: {names}[/yellow]")
+                else:
+                    console.print("  [green]REST API users endpoint returned empty or restricted.[/green]")
+            except Exception:
+                console.print("  [dim]Could not parse REST API user response.[/dim]")
+        elif response:
+            console.print(f"  [green]/wp-json/wp/v2/users → {response.status_code} (restricted).[/green]")
+        else:
+            console.print("  [dim]Could not reach WP REST API.[/dim]")
+
+    def check_wp_version_disclosure(self):
+        console.print("\n[bold blue]9. Checking WordPress version disclosure...[/bold blue]")
+        response = self._make_request(self.target_url)
+        if response:
+            match = re.search(r'<meta name=["\']generator["\'] content=["\']WordPress ([0-9.]+)["\']', response.text)
+            if match:
+                version = match.group(1)
+                self._add_vulnerability(
+                    "WordPress Version Disclosed",
+                    f"WordPress version {version} is revealed in the generator meta tag.",
+                    "LOW",
+                    "Remove the generator meta tag by adding 'remove_action(\"wp_head\", \"wp_generator\");' to functions.php."
+                )
+                console.print(f"  [yellow]WP version disclosed: {version}[/yellow]")
+            else:
+                console.print("  [green]No WordPress version found in page source.[/green]")
+            readme_url = urljoin(self.target_url, 'readme.html')
+            readme_resp = self._make_request(readme_url)
+            if readme_resp and readme_resp.status_code == 200:
+                self._add_vulnerability(
+                    "readme.html Publicly Accessible",
+                    "readme.html reveals the WP version and is unnecessary for public access.",
+                    "LOW",
+                    "Delete or block access to readme.html."
+                )
+                console.print("  [yellow]readme.html is accessible — discloses WP info.[/yellow]")
 
     def run_scan(self):
-        console.print(f"\n[bold magenta]Memulai Pemindaian Kerentanan wp-admin untuk {self.target_url}...[/bold magenta]")
+        console.print(f"\n[bold magenta]Starting WP vulnerability scan for {self.target_url}...[/bold magenta]")
 
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            transient=True,
-            console=console
-        ) as progress:
-            task1 = progress.add_task("[cyan]Memeriksa Akses wp-admin...", total=1)
-            self.check_wp_admin_access()
-            progress.update(task1, completed=1)
+        checks = [
+            ("Checking wp-admin access...",          self.check_wp_admin_access),
+            ("Checking login page exposure...",      self.check_login_page_exposure),
+            ("Checking login form security...",      self.check_login_form_security),
+            ("Checking error messages...",           self.check_error_messages),
+            ("Checking robots.txt...",               self.check_robots_txt_wp_admin),
+            ("Checking directory listing...",        self.check_directory_listing),
+            ("Checking xmlrpc.php...",               self.check_xml_rpc),
+            ("Checking REST API user enum...",       self.check_wp_json_user_enum),
+            ("Checking WP version disclosure...",    self.check_wp_version_disclosure),
+        ]
 
-            task2 = progress.add_task("[cyan]Memeriksa Paparan Halaman Login...", total=1)
-            self.check_login_page_exposure()
-            progress.update(task2, completed=1)
+        with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
+                      transient=True, console=console) as progress:
+            for label, fn in checks:
+                task = progress.add_task(f"[cyan]{label}", total=1)
+                fn()
+                progress.update(task, completed=1)
 
-            task3 = progress.add_task("[cyan]Memeriksa Keamanan Formulir Login...", total=1)
-            self.check_login_form_security()
-            progress.update(task3, completed=1)
-
-            task4 = progress.add_task("[cyan]Memeriksa Pesan Kesalahan Login...", total=1)
-            self.check_error_messages()
-            progress.update(task4, completed=1)
-
-            task5 = progress.add_task("[cyan]Memeriksa robots.txt...", total=1)
-            self.check_robots_txt_wp_admin()
-            progress.update(task5, completed=1)
-
-            task6 = progress.add_task("[cyan]Memeriksa Directory Listing...", total=1)
-            self.check_directory_listing()
-            progress.update(task6, completed=1)
-
-        console.print(f"\n[bold magenta]Pemindaian Selesai![/bold magenta]")
+        console.print(f"\n[bold magenta]Scan complete![/bold magenta]")
         self.generate_report()
 
     def generate_report(self):
         end_time = datetime.now()
         duration = end_time - self.start_time
 
-        console.print("\n" + "="*74, style="bold blue")
-        console.print("[bold blue]RINGKASAN LAPORAN ANALISIS KERENTANAN WP-ADMIN[/bold blue]", justify="center")
-        console.print("="*74, style="bold blue")
-        console.print(f"Target URL: [green]{self.target_url}[/green]")
-        console.print(f"Waktu Mulai: [yellow]{self.start_time.strftime('%Y-%m-%d %H:%M:%S')}[/yellow]")
-        console.print(f"Waktu Selesai: [yellow]{end_time.strftime('%Y-%m-%d %H:%M:%S')}[/yellow]")
-        console.print(f"Durasi Pemindaian: [yellow]{duration}[/yellow]")
-        console.print(f"Kerentanan Ditemukan: [red]{len(self.vulnerabilities_found)}[/red]\n")
+        console.print("\n" + "=" * 74, style="bold blue")
+        console.print("[bold blue]WP-ADMIN VULNERABILITY REPORT[/bold blue]", justify="center")
+        console.print("=" * 74, style="bold blue")
+        console.print(f"Target URL   : [green]{self.target_url}[/green]")
+        console.print(f"Scan Started : [yellow]{self.start_time.strftime('%Y-%m-%d %H:%M:%S')}[/yellow]")
+        console.print(f"Scan Ended   : [yellow]{end_time.strftime('%Y-%m-%d %H:%M:%S')}[/yellow]")
+        console.print(f"Duration     : [yellow]{duration}[/yellow]")
+        console.print(f"Vulnerabilities Found: [red]{len(self.vulnerabilities_found)}[/red]\n")
 
         if not self.vulnerabilities_found:
-            console.print("[bold green]Tidak ada kerentanan signifikan yang terdeteksi dengan pemindaian ini.[/bold green]")
-            console.print("[italic dim]Penting: Ini bukan jaminan keamanan penuh. Lakukan pengujian lebih lanjut.[/italic dim]")
+            console.print("[bold green]No significant vulnerabilities detected.[/bold green]")
+            console.print("[italic dim]This is not a full security guarantee. Always test manually too.[/italic dim]")
         else:
-            table = Table(title="Daftar Kerentanan Ditemukan", show_lines=True)
-            table.add_column("Nama Kerentanan", style="cyan", justify="left")
-            table.add_column("Tingkat Keparahan", style="magenta", justify="center")
-            table.add_column("Deskripsi", style="white", justify="left")
-            table.add_column("Rekomendasi Tindakan", style="green", justify="left")
+            table = Table(title="Vulnerabilities Found", show_lines=True)
+            table.add_column("Name",            style="cyan",    justify="left")
+            table.add_column("Severity",        style="magenta", justify="center")
+            table.add_column("Description",     style="white",   justify="left")
+            table.add_column("Recommendation",  style="green",   justify="left")
 
+            sev_colors = {"INFORMATIONAL": "blue", "LOW": "yellow", "MEDIUM": "orange3", "HIGH": "red"}
             for vuln in self.vulnerabilities_found:
-                severity_color = "green"
-                if vuln["severity"] == "LOW":
-                    severity_color = "yellow"
-                elif vuln["severity"] == "MEDIUM":
-                    severity_color = "orange3"
-                elif vuln["severity"] == "HIGH":
-                    severity_color = "red"
-
+                color = sev_colors.get(vuln["severity"], "white")
                 table.add_row(
                     vuln["name"],
-                    f"[{severity_color}]{vuln['severity']}[/{severity_color}]",
+                    f"[{color}]{vuln['severity']}[/{color}]",
                     vuln["description"],
                     vuln["recommended_action"]
                 )
             console.print(table)
 
-            if self.output_file:
-                report_data = {
-                    "scan_summary": {
-                        "target_url": self.target_url,
-                        "start_time": str(self.start_time),
-                        "end_time": str(end_time),
-                        "duration": str(duration),
-                        "vulnerabilities_count": len(self.vulnerabilities_found)
-                    },
-                    "vulnerabilities_found": self.vulnerabilities_found
-                }
-                try:
-                    with open(self.output_file, 'w', encoding='utf-8') as f:
-                        json.dump(report_data, f, indent=4, ensure_ascii=False)
-                    console.print(f"\n[bold green]Laporan JSON berhasil disimpan ke:[/bold green] [cyan]{self.output_file}[/cyan]")
-                except IOError as e:
-                    console.print(f"[bold red]ERROR:[/bold red] Gagal menulis laporan ke file {self.output_file}: {e}")
+        if self.output_file or SAVE_REPORTS:
+            report_path = self.output_file
+            if not report_path:
+                os.makedirs(OUTPUT_DIR, exist_ok=True)
+                domain     = urlparse(self.target_url).netloc.replace('.', '_')
+                report_path = os.path.join(OUTPUT_DIR, f"wpvuln_{domain}.json")
 
-        console.print("\n" + "="*74, style="bold blue")
-        console.print("[bold blue]DISCLAIMER PENTING:[/bold blue]", justify="center")
-        console.print("="*74, style="bold blue")
-        console.print("[italic]Alat ini hanya melakukan pemindaian. Tidak ada jaminan keamanan penuh. Selalu lakukan pengujian penetrasi manual dan gunakan alat keamanan profesional untuk evaluasi yang komprehensif.[/italic]")
-        console.print("[italic]Pastikan Anda memiliki izin eksplisit untuk menguji situs web apa pun. Penggunaan tanpa izin adalah ilegal dan tidak etis.[/italic]")
-        console.print("="*74, style="bold blue")
+            report_data = {
+                "scan_summary": {
+                    "target_url": self.target_url,
+                    "start_time": str(self.start_time),
+                    "end_time":   str(end_time),
+                    "duration":   str(duration),
+                    "vulnerabilities_count": len(self.vulnerabilities_found)
+                },
+                "vulnerabilities_found": self.vulnerabilities_found
+            }
+            try:
+                with open(report_path, 'w', encoding='utf-8') as f:
+                    json.dump(report_data, f, indent=4, ensure_ascii=False)
+                console.print(f"\n[bold green]JSON report saved to:[/bold green] [cyan]{report_path}[/cyan]")
+            except IOError as e:
+                console.print(f"[bold red]ERROR:[/bold red] Could not write report: {e}")
+
+        console.print("\n" + "=" * 74, style="bold blue")
+        console.print("[bold blue]DISCLAIMER:[/bold blue]", justify="center")
+        console.print("=" * 74, style="bold blue")
+        console.print("[italic]Only scan websites you own or have explicit written permission to test.[/italic]")
+        console.print("=" * 74, style="bold blue")
 
 
 def main():
-        parser = argparse.ArgumentParser(
-            description="Skrip Python Profesional untuk Analisis Kerentanan Dasar wp-admin.",
-            formatter_class=argparse.RawTextHelpFormatter
-        )
-        parser.add_argument(
-            '-u', '--url',
-            type=str,
-            required=True,
-            help="URL situs web target (misal: https://example.com)"
-        )
-        parser.add_argument(
-            '-o', '--output',
-            type=str,
-            help="Nama file untuk menyimpan laporan dalam format JSON (misal: report.json)"
-        )
-        parser.add_argument(
-            '-t', '--timeout',
-            type=int,
-            default=15,
-            help="Batas waktu untuk permintaan HTTP dalam detik (default: 15)"
-        )
-        parser.add_argument(
-            '--user-agent',
-            type=str,
-            default="WP-Admin-Vulnerability-Scanner/1.0 (Python Security Tool - https://github.com/your-repo-link)", # Ganti dengan link repo Anda jika ada
-            help="User-Agent kustom untuk permintaan HTTP"
-        )
-        parser.add_argument(
-            '--no-verify-ssl',
-            action='store_true',
-            help="Nonaktifkan verifikasi sertifikat SSL (Tidak direkomendasikan untuk produksi!)"
-        )
+    parser = argparse.ArgumentParser(
+        description="Merlin — WordPress Admin Vulnerability Scanner",
+        formatter_class=argparse.RawTextHelpFormatter
+    )
+    parser.add_argument('-u', '--url',     type=str, required=True,
+                        help="Target WordPress site URL (e.g. https://example.com)")
+    parser.add_argument('-o', '--output',  type=str, default=None,
+                        help="File to save JSON report")
+    parser.add_argument('-t', '--timeout', type=int, default=TIMEOUT,
+                        help=f"Request timeout in seconds (default: {TIMEOUT})")
+    parser.add_argument('--user-agent',    type=str, default=USER_AGENT,
+                        help="Custom User-Agent string")
+    parser.add_argument('--no-verify-ssl', action='store_true',
+                        help="Disable SSL certificate verification")
 
-        args = parser.parse_args()
+    args = parser.parse_args()
 
-        if not args.url.startswith('http://') and not args.url.startswith('https://'):
-            console.print("[bold red]ERROR:[/bold red] URL harus dimulai dengan 'http://' atau 'https://'.")
-            sys.exit(1)
+    if not args.url.startswith(('http://', 'https://')):
+        console.print("[bold red]ERROR:[/bold red] URL must start with http:// or https://")
+        sys.exit(1)
 
-        scanner = WPAdminVulnerabilityScanner(
-            target_url=args.url,
-            output_file=args.output,
-            timeout=args.timeout,
-            user_agent=args.user_agent
-        )
+    if args.no_verify_ssl:
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        console.print("[bold yellow]WARNING:[/bold yellow] SSL verification disabled.")
 
-        scanner.session.verify = not args.no_verify_ssl
-        if args.no_verify_ssl:
-            console.print("[bold yellow]PERINGATAN:[/bold yellow] Verifikasi SSL dinonaktifkan. Ini TIDAK direkomendasikan untuk lingkungan produksi atau pengujian yang sensitif.")
-            requests.packages.urllib3.disable_warnings(requests.packages.urllib3.exceptions.InsecureRequestWarning)
+    scanner = WPAdminVulnerabilityScanner(
+        target_url=args.url,
+        output_file=args.output,
+        timeout=args.timeout,
+        user_agent=args.user_agent,
+    )
+    scanner.session.verify = not args.no_verify_ssl
 
-        try:
-            scanner.run_scan()
-        except KeyboardInterrupt:
-            console.print("\n[bold red]Pemindaian dihentikan oleh pengguna.[/bold red]")
-            scanner.generate_report()
-        except Exception as e:
-            console.print(f"[bold red]Terjadi kesalahan fatal:[/bold red] {e}")
-            console.print("[dim]Coba lagi atau periksa URL target dan koneksi internet Anda.[/dim]")
+    try:
+        scanner.run_scan()
+    except KeyboardInterrupt:
+        console.print("\n[bold red]Scan interrupted by user.[/bold red]")
+        scanner.generate_report()
+    except Exception as e:
+        console.print(f"[bold red]Fatal error:[/bold red] {e}")
+
 
 if __name__ == "__main__":
-     print(logo)
-     main()
+    print(logo)
+    main()
