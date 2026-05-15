@@ -321,6 +321,11 @@ class WPAdminVulnerabilityScanner:
                 os.makedirs(OUTPUT_DIR, exist_ok=True)
                 domain     = urlparse(self.target_url).netloc.replace('.', '_')
                 report_path = os.path.join(OUTPUT_DIR, f"wpvuln_{domain}.json")
+            else:
+                if os.path.isdir(report_path):
+                    domain = urlparse(self.target_url).netloc.replace('.', '_')
+                    report_path = os.path.join(report_path, f"wpvuln_{domain}.json")
+                os.makedirs(os.path.dirname(os.path.abspath(report_path)), exist_ok=True)
 
             report_data = {
                 "scan_summary": {

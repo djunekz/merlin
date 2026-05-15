@@ -88,15 +88,31 @@ BANNER_PROBES = {
 }
 
 def _parse_port_range(s):
+    presets = {
+        'full':    range(1, 65536),
+        'all':     range(1, 65536),
+        'remote':  [21, 22, 23, 25, 53, 80, 110, 135, 139, 143, 443, 445, 3389, 5900],
+        'web':     [80, 443, 8080, 8443, 8000, 8888],
+        'common':  [21, 22, 23, 25, 53, 80, 110, 135, 139, 143, 443, 445, 3306, 3389, 5432, 5900, 8080],
+    }
+    s_lower = s.strip().lower()
+    if s_lower in presets:
+        return sorted(presets[s_lower])
     ports = set()
     for part in s.split(','):
         part = part.strip()
         if '-' in part:
             a, b = part.split('-', 1)
-            ports.update(range(int(a), int(b) + 1))
+            try:
+                ports.update(range(int(a), int(b) + 1))
+            except ValueError:
+                pass
         else:
-            ports.add(int(part))
-    return sorted(ports)
+            try:
+                ports.add(int(part))
+            except ValueError:
+                pass
+    return sorted(ports) if ports else sorted(range(1, 1025))
 
 def _scan_port(host, port, timeout=1.2):
     try:
