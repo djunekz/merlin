@@ -3,7 +3,7 @@ name: Auto Release
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - '[0-9]*.[0-9]*.[0-9]*'
 
 permissions:
   contents: write
@@ -23,8 +23,8 @@ jobs:
         id: version
         run: |
           TAG="${GITHUB_REF_NAME}"
-          VER="${TAG#v}"
-          echo "tag=$TAG"   >> "$GITHUB_OUTPUT"
+          VER="${TAG}"
+          echo "tag=$TAG"     >> "$GITHUB_OUTPUT"
           echo "version=$VER" >> "$GITHUB_OUTPUT"
 
       - name: Extract changelog body
