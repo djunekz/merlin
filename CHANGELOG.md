@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [1.1.1] — 2026-05-16
+
 ### Fixed
 - **`merlinset.py`** — Variable `warn` was never defined, causing `NameError: name 'warn' is not defined` across multiple modules (`websqli.py`, `webanalyst.py`, `techfinger.py`, `headergrab.py`, `hibpcheck.py`, `sslaudit.py`, `contentdiscovery.py`); added `warn` as a proper colored symbol consistent with the existing symbol set
 - **`portscan.py`** — `_parse_port_range()` would raise `ValueError: invalid literal for int()` when `PORT_RANGE` config value was a named preset string (e.g. `"full"`, `"remote"`); added preset resolver supporting `full`, `all`, `remote`, `web`, and `common` named ranges; non-numeric and unrecognized values now fall back to port 1–1024 instead of crashing
