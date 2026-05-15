@@ -1,0 +1,189 @@
+name: Auto Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version
+        id: version
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VER="${TAG#v}"
+          echo "tag=$TAG"   >> "$GITHUB_OUTPUT"
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+
+      - name: Extract changelog body
+        id: changelog
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          BODY=$(awk \
+            "/^## \[$VERSION\]/{found=1; next} found && /^## /{exit} found{print}" \
+            CHANGELOG.md)
+
+          BODY=$(echo "$BODY" | sed '/./,$!d' | sed -e :a -e '/^\s*$/{$d;N;ba}')
+
+          echo "$BODY" > /tmp/release_body.md
+          echo "Release body written ($(wc -l < /tmp/release_body.md) lines)"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install build tools
+        run: |
+          pip install --upgrade pip build wheel setuptools stdeb
+          sudo apt-get update -qq
+          sudo apt-get install -y dpkg-dev fakeroot
+
+      - name: Build source tarball
+        id: tarball
+        run: |
+          VER="${{ steps.version.outputs.version }}"
+          ARCHIVE="merlin-${VER}.tar.gz"
+
+          tar --exclude='.git' \
+              --exclude='**/__pycache__' \
+              --exclude='*.pyc' \
+              --transform "s|^\.|merlin-${VER}|" \
+              -czf "/tmp/${ARCHIVE}" .
+
+          sha256sum "/tmp/${ARCHIVE}" | awk '{print $1}' > "/tmp/${ARCHIVE}.sha256"
+
+          echo "archive=$ARCHIVE" >> "$GITHUB_OUTPUT"
+
+      - name: Build Python wheel
+        id: wheel
+        run: |
+          VER="${{ steps.version.outputs.version }}"
+
+          if [ ! -f setup.py ] && [ ! -f pyproject.toml ]; then
+            cat > setup.py << SETUP
+          from setuptools import setup, find_packages
+          setup(
+              name="merlin-scanner",
+              version="${VER}",
+              description="Website Vulnerability Scanner for Termux & Linux",
+              author="djunekz",
+              url="https://github.com/djunekz/merlin",
+              packages=find_packages(where="core"),
+              package_dir={"": "core"},
+              python_requires=">=3.6",
+              install_requires=[
+                  "requests",
+                  "colorama",
+                  "beautifulsoup4",
+                  "lxml",
+                  "urllib3",
+                  "dnspython",
+                  "python-whois",
+              ],
+              license="MIT",
+          )
+          SETUP
+          fi
+
+          python -m build --wheel --outdir /tmp/dist/
+
+          WHL=$(ls /tmp/dist/*.whl | head -1)
+          WHL_NAME=$(basename "$WHL")
+          sha256sum "$WHL" | awk '{print $1}' > "/tmp/dist/${WHL_NAME}.sha256"
+
+          echo "whl=$WHL_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Build Debian package
+        id: deb
+        run: |
+          VER="${{ steps.version.outputs.version }}"
+          PKG="merlin-${VER}-all"
+          DEB_DIR="/tmp/deb/${PKG}"
+
+          mkdir -p "${DEB_DIR}/DEBIAN"
+          mkdir -p "${DEB_DIR}/usr/lib/merlin/core"
+          mkdir -p "${DEB_DIR}/usr/bin"
+          mkdir -p "${DEB_DIR}/usr/share/doc/merlin"
+
+          cp -r core/. "${DEB_DIR}/usr/lib/merlin/core/"
+          cp merlin.sh  "${DEB_DIR}/usr/lib/merlin/"
+          cp install.sh "${DEB_DIR}/usr/lib/merlin/"
+          cp README.md CHANGELOG.md LICENSE "${DEB_DIR}/usr/share/doc/merlin/"
+
+          cat > "${DEB_DIR}/usr/bin/merlin" << 'SH'
+          #!/usr/bin/env bash
+          exec bash /usr/lib/merlin/merlin.sh "$@"
+          SH
+          chmod 755 "${DEB_DIR}/usr/bin/merlin"
+
+          INSTALLED_SIZE=$(du -sk "${DEB_DIR}" | awk '{print $1}')
+          cat > "${DEB_DIR}/DEBIAN/control" << CTRL
+          Package: merlin-scanner
+          Version: ${VER}
+          Section: utils
+          Priority: optional
+          Architecture: all
+          Installed-Size: ${INSTALLED_SIZE}
+          Depends: python3 (>= 3.6), python3-pip, git
+          Maintainer: djunekz <https://github.com/djunekz>
+          Homepage: https://github.com/djunekz/merlin
+          Description: Website Vulnerability Scanner for Termux & Linux
+           Merlin is a modular command-line website vulnerability scanner
+           with support for SQLi, XSS, WordPress, DNS, WHOIS, port scanning,
+           technology fingerprinting, header auditing, and more.
+          CTRL
+
+          cat > "${DEB_DIR}/DEBIAN/postinst" << 'POST'
+          #!/bin/bash
+          set -e
+          pip3 install --quiet requests colorama beautifulsoup4 lxml urllib3 dnspython python-whois 2>/dev/null || true
+          echo "Merlin installed. Run: merlin"
+          POST
+          chmod 755 "${DEB_DIR}/DEBIAN/postinst"
+
+          fakeroot dpkg-deb --build "${DEB_DIR}" "/tmp/${PKG}.deb"
+
+          echo "deb=${PKG}.deb" >> "$GITHUB_OUTPUT"
+
+      - name: Collect assets
+        run: |
+          VER="${{ steps.version.outputs.version }}"
+          mkdir -p /tmp/assets
+
+          cp "/tmp/merlin-${VER}.tar.gz"         /tmp/assets/
+          cp "/tmp/merlin-${VER}.tar.gz.sha256"  /tmp/assets/
+          cp "/tmp/deb/merlin-${VER}-all.deb"    /tmp/assets/
+          cp /tmp/dist/*.whl                      /tmp/assets/
+          cp /tmp/dist/*.whl.sha256               /tmp/assets/
+
+          echo "── Assets ready ──"
+          ls -lh /tmp/assets/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Merlin ${{ steps.version.outputs.version }}
+          body_path: /tmp/release_body.md
+          draft: false
+          prerelease: false
+          files: |
+            /tmp/assets/merlin-${{ steps.version.outputs.version }}.tar.gz
+            /tmp/assets/merlin-${{ steps.version.outputs.version }}.tar.gz.sha256
+            /tmp/assets/merlin-${{ steps.version.outputs.version }}-all.deb
+            /tmp/assets/*.whl
+            /tmp/assets/*.whl.sha256
