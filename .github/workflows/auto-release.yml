@@ -166,7 +166,7 @@ jobs:
 
           cp "/tmp/merlin-${VER}.tar.gz"         /tmp/assets/
           cp "/tmp/merlin-${VER}.tar.gz.sha256"  /tmp/assets/
-          cp "/tmp/deb/merlin-${VER}-all.deb"    /tmp/assets/
+          cp "/tmp/merlin-${VER}-all.deb"        /tmp/assets/
           cp /tmp/dist/*.whl                      /tmp/assets/
           cp /tmp/dist/*.whl.sha256               /tmp/assets/
 
