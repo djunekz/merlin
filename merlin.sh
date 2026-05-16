@@ -16,7 +16,7 @@ C='\033[1;96m'
 W='\033[1;97m'
 D='\033[2m'
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 CORE_DIR="$SCRIPT_DIR/core"
 
 if [ ! -d "$CORE_DIR" ]; then
