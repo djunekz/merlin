@@ -2,6 +2,7 @@ import requests
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 import argparse
+import socket
 import signal
 import logging
 import time
@@ -14,7 +15,7 @@ from bs4 import BeautifulSoup
 from merlincolor import *
 from merlinset import *
 from merlinlogo import *
-from merlinconf import TIMEOUT, USER_AGENT, OUTPUT_DIR, SAVE_REPORTS, RATE_LIMIT_DELAY, VERIFY_SSL
+from merlinconf import TIMEOUT, TIMEOUT_TUPLE, USER_AGENT, OUTPUT_DIR, SAVE_REPORTS, RATE_LIMIT_DELAY, VERIFY_SSL
 
 logging.basicConfig(level=logging.INFO,
     format=LC+'['+W+'%(asctime)s'+LC+']'+LG+' %(message)s', datefmt='%H:%M:%S')
@@ -237,17 +238,15 @@ class VulnScanner:
             test_urls.append(url + ('&' if '?' in url else '?') + 'id=' + payload)
         return test_urls
 
-    def _request(self, url, method='GET', data=None, retries=2):
+    def _request(self, url, method='GET', data=None, retries=1):
         for attempt in range(retries):
             try:
                 if method == 'GET':
-                    return self.session.get(url, timeout=TIMEOUT, allow_redirects=True)
+                    return self.session.get(url, timeout=TIMEOUT_TUPLE, allow_redirects=True)
                 else:
-                    return self.session.post(url, data=data, timeout=TIMEOUT, allow_redirects=True)
-            except requests.exceptions.Timeout:
-                if attempt == retries - 1:
-                    return None
-                time.sleep(1)
+                    return self.session.post(url, data=data, timeout=TIMEOUT_TUPLE, allow_redirects=True)
+            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
+                return None
             except Exception:
                 return None
         return None
@@ -485,6 +484,7 @@ class VulnScanner:
 
 
 if __name__ == "__main__":
+    socket.setdefaulttimeout(TIMEOUT)
     try:
         print(logo)
         parser = argparse.ArgumentParser(description=LG + "Merlin — Web Vulnerability Scanner")

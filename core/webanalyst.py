@@ -1,4 +1,5 @@
 import requests
+import socket
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 import argparse
@@ -12,12 +13,18 @@ from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 from merlinset import *
 from merlinlogo import *
-from merlinconf import TIMEOUT, USER_AGENT, OUTPUT_DIR, SAVE_REPORTS, VERIFY_SSL
+from merlinconf import TIMEOUT, TIMEOUT_TUPLE, USER_AGENT, OUTPUT_DIR, SAVE_REPORTS, VERIFY_SSL
 
 logging.basicConfig(level=logging.INFO,
     format=LC+'['+W+'%(asctime)s'+LC+']'+LG+' %(message)s', datefmt='%H:%M:%S')
 logging.getLogger("urllib3").setLevel(logging.ERROR)
 logging.getLogger("requests").setLevel(logging.ERROR)
+
+def _safe_makedirs(path):
+    if os.path.exists(path) and not os.path.isdir(path):
+        path = os.path.dirname(os.path.abspath(path)) or '.'
+    _safe_makedirs(path)
+    return path
 
 def _sep(title=''):
     print(f"\n{LY}{'─'*20} {W}{title} {LY}{'─'*20}{N}" if title else f"{LY}{'─'*65}{N}")
@@ -39,7 +46,7 @@ def _session():
 def check_headers(session, url, report):
     _sep('Security Headers')
     try:
-        r = session.get(url, timeout=TIMEOUT, allow_redirects=True)
+        r = session.get(url, timeout=TIMEOUT_TUPLE, allow_redirects=True)
         h = r.headers
         checks = {
             'Strict-Transport-Security': (None,              'HSTS protection',             'HIGH'),
@@ -83,7 +90,7 @@ def check_ssl(session, url, report):
         report['ssl'] = {'https': False}
         return
     try:
-        r = session.get(url, timeout=TIMEOUT)
+        r = session.get(url, timeout=TIMEOUT_TUPLE)
         print(f"  {sukses} {LG}HTTPS connection OK — Status {r.status_code}{N}")
         http_url = url.replace('https://', 'http://', 1)
         r2 = requests.get(http_url, timeout=8, allow_redirects=True, verify=False)
@@ -103,7 +110,7 @@ def check_robots(session, base_url, report):
     _sep('robots.txt')
     url = urljoin(base_url, '/robots.txt')
     try:
-        r = session.get(url, timeout=TIMEOUT)
+        r = session.get(url, timeout=TIMEOUT_TUPLE)
         if r.status_code == 200:
             disallows = re.findall(r'Disallow:\s*(\S+)', r.text, re.I)
             sitemaps  = re.findall(r'Sitemap:\s*(\S+)',  r.text, re.I)
@@ -125,7 +132,7 @@ def check_sitemap(session, base_url, report):
     for path in ['/sitemap.xml', '/sitemap_index.xml', '/sitemap/sitemap.xml']:
         url = urljoin(base_url, path)
         try:
-            r = session.get(url, timeout=TIMEOUT)
+            r = session.get(url, timeout=TIMEOUT_TUPLE)
             if r.status_code == 200 and ('<?xml' in r.text or '<urlset' in r.text):
                 urls_in = re.findall(r'<loc>(.*?)</loc>', r.text)
                 print(f"  {sukses} {LG}Found{N} at {path} — {len(urls_in)} URLs")
@@ -161,7 +168,7 @@ def check_directory_listing(session, base_url, report):
 def check_cors(session, url, report):
     _sep('CORS Policy')
     try:
-        r = session.get(url, timeout=TIMEOUT,
+        r = session.get(url, timeout=TIMEOUT_TUPLE,
                         headers={'Origin': 'https://evil.com'})
         acao  = r.headers.get('Access-Control-Allow-Origin', '')
         acac  = r.headers.get('Access-Control-Allow-Credentials', '')
@@ -187,7 +194,7 @@ def check_cors(session, url, report):
 def check_cookies(session, url, report):
     _sep('Cookie Security')
     try:
-        r = session.get(url, timeout=TIMEOUT)
+        r = session.get(url, timeout=TIMEOUT_TUPLE)
         issues = []
         if not r.cookies:
             print(f"  {info} No cookies in response")
@@ -252,7 +259,7 @@ def check_sensitive_data(session, url, report):
         'TODO/FIXME secret': r'(?i)(todo|fixme|hack|xxx|secret|password|key)\s*[:=]\s*\S+',
     }
     try:
-        r    = session.get(url, timeout=TIMEOUT)
+        r    = session.get(url, timeout=TIMEOUT_TUPLE)
         body = r.text
         found = []
         for label, pattern in SECRET_PATTERNS.items():
@@ -321,7 +328,7 @@ def check_waf(session, url, report):
     }
     try:
         probe_url = url + ('&' if '?' in url else '?') + "id=1'+OR+'1'='1"
-        r = session.get(probe_url, timeout=TIMEOUT)
+        r = session.get(probe_url, timeout=TIMEOUT_TUPLE)
         headers_str = ' '.join(f"{k}: {v}" for k, v in r.headers.items()).lower()
         body_lower  = r.text.lower()
         cookies_str = ' '.join(c.name for c in r.cookies).lower()
@@ -359,7 +366,7 @@ def check_mixed_content(session, url, report):
         report['mixed_content'] = []
         return
     try:
-        r    = session.get(url, timeout=TIMEOUT)
+        r    = session.get(url, timeout=TIMEOUT_TUPLE)
         soup = BeautifulSoup(r.text, 'html.parser')
         mixed = []
         for tag, attr in [('img','src'),('script','src'),('link','href'),
@@ -378,7 +385,7 @@ def check_mixed_content(session, url, report):
 def check_sri(session, url, report):
     _sep('Subresource Integrity (SRI)')
     try:
-        r    = session.get(url, timeout=TIMEOUT)
+        r    = session.get(url, timeout=TIMEOUT_TUPLE)
         soup = BeautifulSoup(r.text, 'html.parser')
         missing = []
         for tag, attr in [('script','src'),('link','href')]:
@@ -394,6 +401,7 @@ def check_sri(session, url, report):
         print(f"  {warn} {e}")
 
 def main():
+    socket.setdefaulttimeout(TIMEOUT)
     print(logo)
     parser = argparse.ArgumentParser(description=LG + "Merlin — Web Analyst (Full Suite)")
     parser.add_argument('-u', '--url',          required=True)
@@ -416,7 +424,7 @@ def main():
     report          = {"target": url}
 
     try:
-        r = session.get(url, timeout=TIMEOUT + 5)
+        r = session.get(url, timeout=(TIMEOUT + 5, TIMEOUT * 2 + 5))
         print(f"{sukses} Reachable — HTTP {r.status_code}")
     except requests.exceptions.ConnectionError:
         print(f"{err} Cannot connect to {url}")
@@ -455,7 +463,7 @@ def main():
     print(f"{LY}{'═'*65}{N}")
 
     if SAVE_REPORTS:
-        os.makedirs(args.output_dir, exist_ok=True)
+        _safe_makedirs(args.output_dir)
         domain = urlparse(url).netloc.replace('.', '_')
         fname  = os.path.join(args.output_dir, f"webanalyst_{domain}.json")
         with open(fname, 'w', encoding='utf-8') as f:

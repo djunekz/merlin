@@ -5,7 +5,7 @@ from merlinset import *
 CONFIG_FILE = os.path.join(os.path.dirname(__file__), 'merlin_config.json')
 
 DEFAULT_CONFIG = {
-    "timeout"          : 8,
+    "timeout"          : 6,
     "user_agent"       : "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.120 Mobile Safari/537.36",
     "max_threads"      : 5,
     "output_dir"       : "./merlin_output",
@@ -121,7 +121,8 @@ def edit_config():
 
 config = load_config()
 
-TIMEOUT           = (config["timeout"], config["timeout"] * 2)
+TIMEOUT           = config["timeout"]
+TIMEOUT_TUPLE     = (config["timeout"], config["timeout"] * 2)
 USER_AGENT        = config["user_agent"]
 MAX_THREADS       = config["max_threads"]
 OUTPUT_DIR        = config["output_dir"]

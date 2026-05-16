@@ -2,6 +2,7 @@ import requests
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 import argparse
+import socket
 import signal
 import logging
 import time
@@ -10,11 +11,12 @@ import json
 import os
 import re
 import hashlib
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urlparse, urljoin, parse_qs
 from bs4 import BeautifulSoup
 from webshakeset import *
 from merlinlogo import *
-from merlinconf import TIMEOUT, USER_AGENT, OUTPUT_DIR, SAVE_REPORTS, RATE_LIMIT_DELAY
+from merlinconf import TIMEOUT, TIMEOUT_TUPLE, USER_AGENT, OUTPUT_DIR, SAVE_REPORTS, RATE_LIMIT_DELAY
 
 logging.basicConfig(
     level=logging.INFO,
@@ -201,25 +203,35 @@ class WebCrawler:
 
         self.response_times[url] = round(response.elapsed.total_seconds(), 3)
 
+    def _check_one_sensitive(self, path):
+        test_url = urljoin(self.start_url, '/' + path.lstrip('/'))
+        try:
+            r = self.session.head(test_url, timeout=5, allow_redirects=True, verify=False)
+            if r.status_code in (200, 206):
+                r2 = self.session.get(test_url, timeout=5, verify=False)
+                if r2.status_code == 200 and len(r2.text) > 10:
+                    return {
+                        'url': test_url, 'path': path,
+                        'status': r2.status_code,
+                        'size': len(r2.content),
+                        'preview': r2.text[:120].replace('\n', ' '),
+                    }
+        except Exception:
+            pass
+        return None
+
     def check_sensitive_files(self):
         logging.info(f"{pss} {LY}Checking {LC}{len(SENSITIVE_PATHS)}{LY} sensitive paths...{N}")
-        for path in SENSITIVE_PATHS:
-            test_url = urljoin(self.start_url, '/' + path.lstrip('/'))
-            try:
-                r = self.session.head(test_url, timeout=6, allow_redirects=True, verify=False)
-                if r.status_code in (200, 206):
-                    r2 = self.session.get(test_url, timeout=6, verify=False)
-                    if r2.status_code == 200 and len(r2.text) > 10:
-                        self.sensitive_exposed.append({
-                            'url': test_url, 'path': path,
-                            'status': r2.status_code,
-                            'size': len(r2.content),
-                            'preview': r2.text[:120].replace('\n', ' '),
-                        })
-                        logging.warning(f"{warn} {LR}EXPOSED{N} {test_url}")
-                time.sleep(0.15)
-            except Exception:
-                pass
+        with ThreadPoolExecutor(max_workers=10) as ex:
+            futures = {ex.submit(self._check_one_sensitive, p): p for p in SENSITIVE_PATHS}
+            for future in as_completed(futures, timeout=60):
+                try:
+                    result = future.result()
+                    if result:
+                        self.sensitive_exposed.append(result)
+                        logging.warning(f"{warn} {LR}EXPOSED{N} {result['url']}")
+                except Exception:
+                    pass
 
     def crawl(self, url, depth):
         if depth > self.max_depth or url in self.visited_urls:
@@ -229,20 +241,22 @@ class WebCrawler:
         logging.info(f"{star}{LY} request{N} [{depth}/{self.max_depth}] {url}")
 
         try:
-            response = self.session.get(url, timeout=TIMEOUT, allow_redirects=True, verify=False)
+            response = self.session.get(url, timeout=TIMEOUT_TUPLE, allow_redirects=True, verify=False)
             time.sleep(self.delay)
 
             if response.history:
                 self.redirect_chains[url] = [r.url for r in response.history] + [response.url]
 
-            if response.status_code != 200:
+            if response.status_code not in (200, 201, 206, 301, 302, 307, 308):
                 self.broken_links[url] = response.status_code
                 logging.warning(f"{min_pfx}{LY} {url} → HTTP {response.status_code}")
-                return
-
-            content_type = response.headers.get('Content-Type', '')
-            if 'text/html' not in content_type:
-                return
+                content_type = response.headers.get('Content-Type', '')
+                if 'text/html' not in content_type:
+                    return
+            else:
+                content_type = response.headers.get('Content-Type', '')
+                if 'text/html' not in content_type:
+                    return
 
             soup = BeautifulSoup(response.text, 'html.parser')
             self._analyze_page(url, response, soup)
@@ -366,7 +380,10 @@ class WebCrawler:
         print(f"{LY}{'─'*65}{N}")
 
     def _save_report(self):
-        os.makedirs(self.output_dir, exist_ok=True)
+        out = self.output_dir
+        if os.path.exists(out) and not os.path.isdir(out):
+            out = os.path.dirname(os.path.abspath(out)) or '.'
+        os.makedirs(out, exist_ok=True)
         report = {
             "target":            self.start_url,
             "domain":            self.base_domain,
@@ -386,7 +403,7 @@ class WebCrawler:
             "redirect_chains":   self.redirect_chains,
             "response_times":    self.response_times,
         }
-        fname = os.path.join(self.output_dir, f"webshake_{self.base_domain.replace('.','_')}.json")
+        fname = os.path.join(out, f"webshake_{self.base_domain.replace('.','_')}.json")
         try:
             with open(fname, 'w', encoding='utf-8') as f:
                 json.dump(report, f, indent=4, ensure_ascii=False)
@@ -396,6 +413,7 @@ class WebCrawler:
 
 
 if __name__ == "__main__":
+    socket.setdefaulttimeout(TIMEOUT)
     try:
         print(logo)
         parser = argparse.ArgumentParser(description=LY + "Merlin — Web Crawler & Analyzer")

@@ -2,6 +2,7 @@ import requests
 from bs4 import BeautifulSoup
 import re
 import argparse
+import socket
 import json
 import time
 import os
@@ -13,7 +14,7 @@ from rich.table import Table
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from merlinlogo import *
 from merlinset import *
-from merlinconf import TIMEOUT, USER_AGENT, OUTPUT_DIR, SAVE_REPORTS, VERIFY_SSL, MAX_RETRIES
+from merlinconf import TIMEOUT, TIMEOUT_TUPLE, USER_AGENT, OUTPUT_DIR, SAVE_REPORTS, VERIFY_SSL, MAX_RETRIES
 
 console = Console()
 
@@ -318,7 +319,7 @@ class WPAdminVulnerabilityScanner:
         if self.output_file or SAVE_REPORTS:
             report_path = self.output_file
             if not report_path:
-                os.makedirs(OUTPUT_DIR, exist_ok=True)
+                _safe_makedirs(OUTPUT_DIR)
                 domain     = urlparse(self.target_url).netloc.replace('.', '_')
                 report_path = os.path.join(OUTPUT_DIR, f"wpvuln_{domain}.json")
             else:
@@ -351,7 +352,14 @@ class WPAdminVulnerabilityScanner:
         console.print("=" * 74, style="bold blue")
 
 
+def _safe_makedirs(path):
+    if os.path.exists(path) and not os.path.isdir(path):
+        path = os.path.dirname(os.path.abspath(path)) or '.'
+    _safe_makedirs(path)
+    return path
+
 def main():
+    socket.setdefaulttimeout(TIMEOUT)
     parser = argparse.ArgumentParser(
         description="Merlin — WordPress Admin Vulnerability Scanner",
         formatter_class=argparse.RawTextHelpFormatter
