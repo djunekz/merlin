@@ -1,5 +1,8 @@
 import requests
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 import argparse
+import signal
 import logging
 import time
 import sys
@@ -18,6 +21,8 @@ logging.basicConfig(
     format=LC + '[' + W + '%(asctime)s' + LC + ']' + LG + ' %(message)s',
     datefmt='%H:%M:%S'
 )
+logging.getLogger("urllib3").setLevel(logging.ERROR)
+logging.getLogger("requests").setLevel(logging.ERROR)
 
 CMS_SIGNATURES = {
     "WordPress":   [r'wp-content', r'wp-includes', r'wp-json', r'WordPress'],
@@ -391,13 +396,17 @@ class WebCrawler:
 
 
 if __name__ == "__main__":
-    print(logo)
-    parser = argparse.ArgumentParser(description=LY + "Merlin — Web Crawler & Analyzer")
-    parser.add_argument("-u", "--url",    dest="url",       required=True)
-    parser.add_argument("-d", "--depth",  dest="max_depth", type=int, default=2)
-    parser.add_argument("--delay",        dest="delay",     type=float, default=RATE_LIMIT_DELAY)
-    parser.add_argument("-o", "--output", dest="output_dir",default=OUTPUT_DIR)
-    args = parser.parse_args()
+    try:
+        print(logo)
+        parser = argparse.ArgumentParser(description=LY + "Merlin — Web Crawler & Analyzer")
+        parser.add_argument("-u", "--url",    dest="url",       required=True)
+        parser.add_argument("-d", "--depth",  dest="max_depth", type=int, default=2)
+        parser.add_argument("--delay",        dest="delay",     type=float, default=RATE_LIMIT_DELAY)
+        parser.add_argument("-o", "--output", dest="output_dir",default=OUTPUT_DIR)
+        args = parser.parse_args()
 
-    crawler = WebCrawler(args.url, args.max_depth, args.delay, args.output_dir)
-    crawler.start()
+        crawler = WebCrawler(args.url, args.max_depth, args.delay, args.output_dir)
+        crawler.start()
+
+    except KeyboardInterrupt:
+        print('\n\033[1;92m[*]\033[0m Scan interrupted. Returning to menu...\033[0m')

@@ -1,5 +1,8 @@
 import requests
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 import argparse
+import signal
 import json
 import os
 import re
@@ -273,28 +276,95 @@ def print_report(url, results, error):
 
     print(f"\n{LY}{'═'*65}{N}")
 
+def _compare_http_https(domain):
+    http_url  = f"http://{domain}"
+    https_url = f"https://{domain}"
+
+    print(f"\n{LY}{'═'*65}{N}")
+    print(f"{plus} {W}HTTP vs HTTPS Comparison{N} → {LC}{domain}{N}")
+    print(f"{LY}{'═'*65}{N}")
+
+    http_res,  http_err  = grab_headers(http_url,  follow_redirects=True)
+    https_res, https_err = grab_headers(https_url, follow_redirects=True)
+
+    def _row(label, hval, sval):
+        hc = LG if hval == sval else LY
+        sc = LG if hval == sval else LC
+        print(f"  {LC}{label:<22}{N}  {hc}{str(hval):<28}{N}  {sc}{str(sval)}{N}")
+
+    print(f"\n  {W}{'Attribute':<22}  {'HTTP':<28}  HTTPS{N}")
+    print(f"  {'─'*22}  {'─'*28}  {'─'*20}")
+
+    if http_err:
+        print(f"  {err} HTTP  : {http_err}")
+    if https_err:
+        print(f"  {err} HTTPS : {https_err}")
+
+    if not http_err and not https_err:
+        _row("Status Code",    http_res.get('status_code'),    https_res.get('status_code'))
+        _row("Final URL",      http_res.get('final_url','')[:28], https_res.get('final_url','')[:28])
+        _row("Response Time",  http_res.get('response_time'),  https_res.get('response_time'))
+        _row("Content-Type",   http_res.get('content_type','')[:28], https_res.get('content_type','')[:28])
+        _row("Grade Score",    f"{http_res.get('grade_score',0)}/{http_res.get('grade_max',0)}",
+                               f"{https_res.get('grade_score',0)}/{https_res.get('grade_max',0)}")
+
+        http_chain  = http_res.get('redirect_chain', [])
+        https_chain = https_res.get('redirect_chain', [])
+        print(f"\n  {LC}HTTP  redirect chain  :{N}")
+        for s in http_chain:
+            print(f"    {DG}→ {s}{N}")
+        print(f"  {LC}HTTPS redirect chain  :{N}")
+        for s in https_chain:
+            print(f"    {DG}→ {s}{N}")
+
+        print(f"\n  {W}Security Headers — HTTP vs HTTPS{N}")
+        print(f"  {'─'*60}")
+        all_hdrs = set(SECURITY_HEADERS.keys())
+        for h in all_hdrs:
+            hp = http_res.get('security_headers', {}).get(h, {}).get('present', False)
+            sp = https_res.get('security_headers', {}).get(h, {}).get('present', False)
+            hc = LG if hp else LR
+            sc = LG if sp else LR
+            hl = "PRESENT" if hp else "MISSING"
+            sl = "PRESENT" if sp else "MISSING"
+            print(f"  {LC}{h:<36}{N}  {hc}{hl:<10}{N}  {sc}{sl}{N}")
+
+    print(f"\n{LY}{'═'*65}{N}")
+
+
 def main():
     print(logo)
     parser = argparse.ArgumentParser(description=LY + "Merlin — HTTP Header Grabber + Security Grader")
-    parser.add_argument('-u', '--url',        required=True)
-    parser.add_argument('--no-redirect',      action='store_true')
-    parser.add_argument('-o', '--output',     dest='output_dir', default=OUTPUT_DIR)
+    parser.add_argument('-u', '--url',          required=True)
+    parser.add_argument('--no-redirect',        action='store_true')
+    parser.add_argument('--compare-http',       action='store_true',
+                        help='Compare HTTP vs HTTPS headers side by side')
+    parser.add_argument('-o', '--output',       dest='output_dir', default=OUTPUT_DIR)
     args = parser.parse_args()
 
     url = args.url
     if not url.startswith(('http://', 'https://')):
         url = 'https://' + url
 
+    domain = urlparse(url).netloc
+
+    if args.compare_http:
+        _compare_http_https(domain)
+        return
+
     results, error = grab_headers(url, follow_redirects=not args.no_redirect)
     print_report(url, results, error)
 
     if SAVE_REPORTS and not error:
         os.makedirs(args.output_dir, exist_ok=True)
-        domain = urlparse(url).netloc.replace('.', '_')
-        fname  = os.path.join(args.output_dir, f"headers_{domain}.json")
+        fname  = os.path.join(args.output_dir, f"headers_{domain.replace('.', '_')}.json")
         with open(fname, 'w', encoding='utf-8') as f:
             json.dump({"target": url, "results": results}, f, indent=4, ensure_ascii=False)
         print(f"{sukses} Report saved → {LY}{fname}{N}")
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print('
+[1;92m[*][0m Scan interrupted. Returning to menu...[0m')

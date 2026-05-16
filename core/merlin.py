@@ -31,8 +31,14 @@ def _get_domain(ctx='lookup'):
     return domain.strip() if domain else None
 
 def _run(script, args=''):
+    import subprocess, signal
     cmd = f'python {script} {args}' if args else f'python {script}'
-    os.system(cmd)
+    try:
+        subprocess.run(cmd, shell=True)
+    except KeyboardInterrupt:
+        print(f'\n{note} Scan interrupted. Returning to menu...{N}')
+    finally:
+        signal.signal(signal.SIGINT, signal.default_int_handler)
 
 def _pause():
     print('')

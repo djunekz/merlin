@@ -1,5 +1,8 @@
 import requests
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 import argparse
+import signal
 import logging
 import time
 import sys
@@ -14,7 +17,9 @@ from merlinlogo import *
 from merlinconf import TIMEOUT, USER_AGENT, OUTPUT_DIR, SAVE_REPORTS, RATE_LIMIT_DELAY, VERIFY_SSL
 
 logging.basicConfig(level=logging.INFO,
-    format=LC+'['+W+'%(asctime)s'+LC+']'+LG+' %(message)s', datefmt='%H:%M:%S')
+    format=LC+'['+W+'%(asctime)
+logging.getLogger("urllib3").setLevel(logging.ERROR)
+logging.getLogger("requests").setLevel(logging.ERROR)s'+LC+']'+LG+' %(message)s', datefmt='%H:%M:%S')
 
 SQLI_PAYLOADS = [
     ("' OR 1=1 --",                     "boolean"),
@@ -480,36 +485,40 @@ class VulnScanner:
 
 
 if __name__ == "__main__":
-    print(logo)
-    parser = argparse.ArgumentParser(description=LG + "Merlin — Web Vulnerability Scanner")
-    parser.add_argument("-u", "--url",    dest="target_url", required=True)
-    parser.add_argument("--deep",         action="store_true", help="Extended payload set")
-    parser.add_argument("--sqli-only",    action="store_true")
-    parser.add_argument("--xss-only",     action="store_true")
-    parser.add_argument("-o", "--output", dest="output_dir", default=OUTPUT_DIR)
-    opts = parser.parse_args()
+    try:
+        print(logo)
+        parser = argparse.ArgumentParser(description=LG + "Merlin — Web Vulnerability Scanner")
+        parser.add_argument("-u", "--url",    dest="target_url", required=True)
+        parser.add_argument("--deep",         action="store_true", help="Extended payload set")
+        parser.add_argument("--sqli-only",    action="store_true")
+        parser.add_argument("--xss-only",     action="store_true")
+        parser.add_argument("-o", "--output", dest="output_dir", default=OUTPUT_DIR)
+        opts = parser.parse_args()
 
-    print(f"{LY}{'═'*65}")
-    print(f"{W}  Merlin — Vulnerability Scanner")
-    print(f"{LY}{'═'*65}{N}")
-    print(f"{note} Target : {LC}{opts.target_url}{N}")
-    print(f"{note} Mode   : {LY}{'deep' if opts.deep else 'standard'}{N}")
+        print(f"{LY}{'═'*65}")
+        print(f"{W}  Merlin — Vulnerability Scanner")
+        print(f"{LY}{'═'*65}{N}")
+        print(f"{note} Target : {LC}{opts.target_url}{N}")
+        print(f"{note} Mode   : {LY}{'deep' if opts.deep else 'standard'}{N}")
 
-    s = VulnScanner(opts.target_url, deep=opts.deep, output_dir=opts.output_dir)
+        s = VulnScanner(opts.target_url, deep=opts.deep, output_dir=opts.output_dir)
 
-    if opts.sqli_only:
-        s.test_sqli()
-    elif opts.xss_only:
-        s.test_xss()
-    else:
-        s.test_sqli()
-        s.test_xss()
-        s.test_ssti()
-        s.test_path_traversal()
-        s.test_html_injection()
-        s.test_open_redirect()
-        s.test_info_disclosure()
+        if opts.sqli_only:
+            s.test_sqli()
+        elif opts.xss_only:
+            s.test_xss()
+        else:
+            s.test_sqli()
+            s.test_xss()
+            s.test_ssti()
+            s.test_path_traversal()
+            s.test_html_injection()
+            s.test_open_redirect()
+            s.test_info_disclosure()
 
-    s.summary()
-    if SAVE_REPORTS:
-        s.save_report()
+        s.summary()
+        if SAVE_REPORTS:
+            s.save_report()
+
+    except KeyboardInterrupt:
+        print('\n\033[1;92m[*]\033[0m Scan interrupted. Returning to menu...\033[0m')

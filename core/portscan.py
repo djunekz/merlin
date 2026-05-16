@@ -1,4 +1,5 @@
 import argparse
+import signal
 import socket
 import json
 import os
@@ -257,4 +258,8 @@ def main():
         print(f"{sukses} Report saved → {LY}{fname}{N}")
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print('
+[1;92m[*][0m Scan interrupted. Returning to menu...[0m')

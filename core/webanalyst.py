@@ -1,4 +1,6 @@
 import requests
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 import argparse
 import logging
 import sys
@@ -13,7 +15,9 @@ from merlinlogo import *
 from merlinconf import TIMEOUT, USER_AGENT, OUTPUT_DIR, SAVE_REPORTS, VERIFY_SSL
 
 logging.basicConfig(level=logging.INFO,
-    format=LC+'['+W+'%(asctime)s'+LC+']'+LG+' %(message)s', datefmt='%H:%M:%S')
+    format=LC+'['+W+'%(asctime)
+logging.getLogger("urllib3").setLevel(logging.ERROR)
+logging.getLogger("requests").setLevel(logging.ERROR)s'+LC+']'+LG+' %(message)s', datefmt='%H:%M:%S')
 
 def _sep(title=''):
     print(f"\n{LY}{'─'*20} {W}{title} {LY}{'─'*20}{N}" if title else f"{LY}{'─'*65}{N}")
