@@ -19,7 +19,7 @@ ok="${C}[${G}✔${C}]${G}"
 err="${C}[${R}!${C}]${R}"
 info="${C}[${C}i${C}]${W}"
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 
 _banner() {
     clear
@@ -87,6 +87,7 @@ PIP_DEPS=(
     "beautifulsoup4"
     "lxml"
     "urllib3"
+    "rich"
 )
 
 
@@ -99,12 +100,12 @@ install_termux() {
     _run "Installing git..."                pkg install git -y
     _run "Installing libxml2 (lxml dep)..." pkg install libxml2 -y
     _run "Installing libxslt (lxml dep)..." pkg install libxslt -y
-    _run "Upgrading pip..."                 pip install --upgrade pip
+    _run "Upgrading pip..."                 pip install --upgrade pip --break-system-packages
 
     echo ""
     echo -e "${note} Installing Python dependencies..."
     for dep in "${PIP_DEPS[@]}"; do
-        _run "  pip: $dep"  pip install "$dep"
+        _run "  pip: $dep"  pip install "$dep" --break-system-packages
     done
 
     _make_symlink_termux
