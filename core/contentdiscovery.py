@@ -1,5 +1,8 @@
 import requests
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 import argparse
+import signal
 import json
 import os
 import sys
@@ -311,4 +314,7 @@ def main():
         scanner.save_report()
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print('\n\033[1;92m[*]\033[0m Scan interrupted. Returning to menu...\033[0m')

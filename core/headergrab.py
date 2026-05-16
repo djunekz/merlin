@@ -366,4 +366,4 @@ if __name__ == '__main__':
     try:
         main()
     except KeyboardInterrupt:
-        print('[1;92m[*][0m Scan interrupted. Returning to menu...[0m')
+        print('\n\033[1;92m[*]\033[0m Scan interrupted. Returning to menu...\033[0m')

@@ -17,9 +17,9 @@ from merlinlogo import *
 from merlinconf import TIMEOUT, USER_AGENT, OUTPUT_DIR, SAVE_REPORTS, RATE_LIMIT_DELAY, VERIFY_SSL
 
 logging.basicConfig(level=logging.INFO,
-    format=LC+'['+W+'%(asctime)'
+    format=LC+'['+W+'%(asctime)s'+LC+']'+LG+' %(message)s', datefmt='%H:%M:%S')
 logging.getLogger("urllib3").setLevel(logging.ERROR)
-logging.getLogger("requests").setLevel(logging.ERROR)s'+LC+']'+LG+' %(message)s', datefmt='%H:%M:%S')
+logging.getLogger("requests").setLevel(logging.ERROR)
 
 SQLI_PAYLOADS = [
     ("' OR 1=1 --",                     "boolean"),
