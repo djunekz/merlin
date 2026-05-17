@@ -1,12 +1,17 @@
 import ssl
 import socket
 import argparse
+import warnings
+warnings.filterwarnings('ignore', category=DeprecationWarning)
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+import signal
 import json
 import os
 import sys
 import time
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from urllib.parse import urlparse
 from merlincolor import *
 from merlinset import *
@@ -21,6 +26,12 @@ WEAK_CIPHERS = [
 
 WEAK_PROTOCOLS = ['SSLv2', 'SSLv3', 'TLSv1', 'TLSv1.1']
 STRONG_PROTOCOLS = ['TLSv1.2', 'TLSv1.3']
+
+def _safe_makedirs(path):
+    if os.path.exists(path) and not os.path.isdir(path):
+        path = os.path.dirname(os.path.abspath(path)) or '.'
+    os.makedirs(path, exist_ok=True)
+    return path
 
 def _sep(title=''):
     if title:
@@ -77,9 +88,9 @@ def analyze_cert(cert, host):
     not_before_str = cert.get('notBefore', '')
     not_after_str  = cert.get('notAfter',  '')
     try:
-        not_before = datetime.strptime(not_before_str, '%b %d %H:%M:%S %Y %Z')
-        not_after  = datetime.strptime(not_after_str,  '%b %d %H:%M:%S %Y %Z')
-        now        = datetime.utcnow()
+        not_before = datetime.strptime(not_before_str, '%b %d %H:%M:%S %Y %Z').replace(tzinfo=timezone.utc)
+        not_after  = datetime.strptime(not_after_str,  '%b %d %H:%M:%S %Y %Z').replace(tzinfo=timezone.utc)
+        now        = datetime.now(timezone.utc)
         days_left  = (not_after - now).days
         result['not_before']  = not_before.strftime('%Y-%m-%d')
         result['not_after']   = not_after.strftime('%Y-%m-%d')
@@ -129,20 +140,28 @@ def check_protocol(host, port, protocol_version):
         ctx.check_hostname = False
         ctx.verify_mode    = ssl.CERT_NONE
 
-        if protocol_version == 'TLSv1':
-            ctx.minimum_version = ssl.TLSVersion.TLSv1
-            ctx.maximum_version = ssl.TLSVersion.TLSv1
-        elif protocol_version == 'TLSv1.1':
-            ctx.minimum_version = ssl.TLSVersion.TLSv1_1
-            ctx.maximum_version = ssl.TLSVersion.TLSv1_1
-        elif protocol_version == 'TLSv1.2':
-            ctx.minimum_version = ssl.TLSVersion.TLSv1_2
-            ctx.maximum_version = ssl.TLSVersion.TLSv1_2
-        elif protocol_version == 'TLSv1.3':
-            ctx.minimum_version = ssl.TLSVersion.TLSv1_3
-            ctx.maximum_version = ssl.TLSVersion.TLSv1_3
-        else:
-            return False, 'unsupported'
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', DeprecationWarning)
+            if protocol_version == 'TLSv1':
+                try:
+                    ctx.minimum_version = ssl.TLSVersion.TLSv1
+                    ctx.maximum_version = ssl.TLSVersion.TLSv1
+                except AttributeError:
+                    return False, 'not supported by this Python/OpenSSL build'
+            elif protocol_version == 'TLSv1.1':
+                try:
+                    ctx.minimum_version = ssl.TLSVersion.TLSv1_1
+                    ctx.maximum_version = ssl.TLSVersion.TLSv1_1
+                except AttributeError:
+                    return False, 'not supported by this Python/OpenSSL build'
+            elif protocol_version == 'TLSv1.2':
+                ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+                ctx.maximum_version = ssl.TLSVersion.TLSv1_2
+            elif protocol_version == 'TLSv1.3':
+                ctx.minimum_version = ssl.TLSVersion.TLSv1_3
+                ctx.maximum_version = ssl.TLSVersion.TLSv1_3
+            else:
+                return False, 'unsupported'
 
         with socket.create_connection((host, port), timeout=5) as sock:
             with ctx.wrap_socket(sock, server_hostname=host) as ssock:
@@ -270,6 +289,7 @@ def print_report(host, port, cert_info, cert_issues, cipher_info,
     report['issues']   = cert_issues
 
 def main():
+    socket.setdefaulttimeout(TIMEOUT)
     print(logo)
     parser = argparse.ArgumentParser(description=LY + "Merlin — SSL/TLS Deep Auditor")
     parser.add_argument('-u', '--url',  required=True,
@@ -311,11 +331,14 @@ def main():
                  version, protocol_results, ciphers, report)
 
     if SAVE_REPORTS:
-        os.makedirs(args.output_dir, exist_ok=True)
+        _safe_makedirs(args.output_dir)
         fname = os.path.join(args.output_dir, f"ssl_{host.replace('.','_')}.json")
         with open(fname, 'w', encoding='utf-8') as f:
             json.dump(report, f, indent=4, ensure_ascii=False)
         print(f"{sukses} Report saved → {LY}{fname}{N}")
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print('\n\033[1;92m[*]\033[0m Scan interrupted. Returning to menu...\033[0m')

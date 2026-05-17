@@ -23,7 +23,7 @@ logging.getLogger("requests").setLevel(logging.ERROR)
 def _safe_makedirs(path):
     if os.path.exists(path) and not os.path.isdir(path):
         path = os.path.dirname(os.path.abspath(path)) or '.'
-    _safe_makedirs(path)
+    os.makedirs(path, exist_ok=True)
     return path
 
 def _sep(title=''):
@@ -407,6 +407,8 @@ def main():
     parser.add_argument('-u', '--url',          required=True)
     parser.add_argument('-n', '--no-ssl-verify', action='store_true')
     parser.add_argument('-o', '--output',        dest='output_dir', default=OUTPUT_DIR)
+    parser.add_argument('--quick',               action='store_true',
+                        help='Skip slow checks (open redirect, broken access, SRI)')
     args = parser.parse_args()
 
     url = args.url
@@ -414,8 +416,9 @@ def main():
         print(f"{err} Invalid URL — use http:// or https://")
         sys.exit(1)
 
+    mode_label = f"{LY}Quick Mode{N}" if args.quick else f"{LY}Full Suite{N}"
     print(f"\n{LY}{'═'*65}{N}")
-    print(f"{plus} {LY}Web Analyst — Full Suite{N}")
+    print(f"{plus} {LY}Web Analyst —{N} {mode_label}")
     print(f"{note} Target: {LC}{url}{N}")
     print(f"{LY}{'═'*65}{N}")
 
@@ -432,6 +435,8 @@ def main():
     except Exception as e:
         print(f"{err} {e}")
         sys.exit(1)
+
+    SLOW_CHECKS = {"Open Redirect", "Broken Access Control", "SRI Check"}
 
     checks = [
         ("SSL / TLS",            lambda: check_ssl(session, url, report)),
@@ -450,6 +455,9 @@ def main():
     ]
 
     for label, fn in checks:
+        if args.quick and label in SLOW_CHECKS:
+            print(f"\n{DG}  [SKIP] {label} (quick mode){N}")
+            continue
         try:
             fn()
         except KeyboardInterrupt:

@@ -9,7 +9,7 @@
 # bisa dibilang kamu hina dan memalukan.
 #
 
-__version__     = "1.1.1"
+__version__     = "1.1.2"
 __author__      = "djunekz"
 __github__      = "https://github.com/djunekz/merlin"
 __repo_clone__  = "https://github.com/djunekz/merlin.git"

@@ -307,6 +307,20 @@ class WebCrawler:
         print(f"  {LC}Ext. Scripts   {N}: {LY}{len(self.scripts_found)}{N}")
         print(f"  {LC}HTML Comments  {N}: {DG}{len(self.comments_found)}{N}")
 
+        if self.internal_links:
+            print(f"\n{plus} {LG}Internal Links [{len(self.internal_links)}]{N}:")
+            for u in sorted(self.internal_links)[:30]:
+                print(f"  {star} {DG}{u}{N}")
+            if len(self.internal_links) > 30:
+                print(f"  {DG}... and {len(self.internal_links)-30} more{N}")
+
+        if self.external_links:
+            print(f"\n{plus} {LY}External Links [{len(self.external_links)}]{N}:")
+            for u in sorted(self.external_links)[:20]:
+                print(f"  {star} {DG}{u}{N}")
+            if len(self.external_links) > 20:
+                print(f"  {DG}... and {len(self.external_links)-20} more{N}")
+
         if self.cms_detected:
             print(f"\n{plus} {LY}CMS Detected{N}: {LG}{', '.join(self.cms_detected)}{N}")
 

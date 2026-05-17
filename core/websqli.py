@@ -22,6 +22,12 @@ logging.basicConfig(level=logging.INFO,
 logging.getLogger("urllib3").setLevel(logging.ERROR)
 logging.getLogger("requests").setLevel(logging.ERROR)
 
+def _safe_makedirs(path):
+    if os.path.exists(path) and not os.path.isdir(path):
+        path = os.path.dirname(os.path.abspath(path)) or '.'
+    os.makedirs(path, exist_ok=True)
+    return path
+
 SQLI_PAYLOADS = [
     ("' OR 1=1 --",                     "boolean"),
     ('" OR 1=1 --',                     "boolean"),
@@ -258,13 +264,22 @@ class VulnScanner:
         found = 0
         time_threshold = 2.8
 
-        for payload, ptype in payloads:
+        parsed_check = urlparse(self.target_url)
+        has_params = bool(parsed_check.query)
+        if not has_params and not self.deep:
+            print(f"  {info} No query parameters in URL — skipping SQLi (use deep mode to force inject)")
+            return 0
+        if not has_params:
+            print(f"  {info} No query params — injecting test param ?id=payload")
+
+        total = len(payloads)
+        for i, (payload, ptype) in enumerate(payloads, 1):
+            print(f"  {DG}[{i}/{total}] Testing {ptype}...{N}", end='\r')
             test_urls = self._inject_param(self.target_url, payload)
             for test_url in test_urls:
-                t0   = time.time()
-                resp = self._request(test_url)
+                t0      = time.time()
+                resp    = self._request(test_url)
                 elapsed = time.time() - t0
-                time.sleep(RATE_LIMIT_DELAY)
                 if resp is None:
                     continue
                 body = resp.text.lower()
@@ -291,6 +306,7 @@ class VulnScanner:
                     })
                     found += 1
 
+        print(f"  {' '*50}", end='\r')
         print(f"  {(sukses if found == 0 else warn)} SQLi: {(LG+'clean' if found == 0 else LR+str(found)+' findings')}{N}")
         return found
 
@@ -471,7 +487,7 @@ class VulnScanner:
         print(f"{LY}{'═'*65}{N}")
 
     def save_report(self):
-        os.makedirs(self.output_dir, exist_ok=True)
+        _safe_makedirs(self.output_dir)
         domain = urlparse(self.target_url).netloc.replace('.', '_')
         fname  = os.path.join(self.output_dir, f"vuln_{domain}.json")
         try:

@@ -134,7 +134,7 @@ def run_contentdiscovery():
     print(note + ' Custom wordlist file path? (leave blank for built-in): \n', end='')
     wl = _prompt('wordlist').strip()
     wl_flag = f'-w "{wl}"' if wl else ''
-    print(note + ' Threads [default 10]: ', end='')
+    print(note + ' Threads [default 10]: \n', end='')
     t = _prompt('threads').strip()
     t = t if t.isdigit() else '10'
     _run('contentdiscovery.py', f'-u "{url}" -t {t} {wl_flag}')
