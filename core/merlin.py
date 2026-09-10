@@ -167,6 +167,32 @@ def run_hibp():
         elif email:
             _run('hibpcheck.py', f'email -e "{email}"')
 
+def run_correlate():
+    domain = _get_domain('correlate')
+    if not domain:
+        return
+    print(note + f' Reports dir [{OUTPUT_DIR}]: \n', end='')
+    out = _prompt('correlate_output').strip() or OUTPUT_DIR
+    _run('correlate.py', f'-d "{domain}" -o "{out}"')
+
+def run_risktimeline():
+    domain = _get_domain('timeline')
+    if not domain:
+        return
+    print(note + ' Show saved history instead of taking a new snapshot? [y/N]: \n', end='')
+    show = '--show' if _prompt('timeline_show').strip().lower() in ('y', 'yes') else ''
+    print(note + f' Reports dir [{OUTPUT_DIR}]: \n', end='')
+    out = _prompt('timeline_output').strip() or OUTPUT_DIR
+    _run('risktimeline.py', f'-d "{domain}" -o "{out}" {show}')
+
+def run_storyreport():
+    domain = _get_domain('story')
+    if not domain:
+        return
+    print(note + f' Reports dir [{OUTPUT_DIR}]: \n', end='')
+    out = _prompt('story_output').strip() or OUTPUT_DIR
+    _run('storyreport.py', f'-d "{domain}" -o "{out}"')
+
 MENU_ITEMS = [
     ('1',  'WP Vulnerability Scan',         run_wpvuln),
     ('2',  'SQLi / XSS / SSTI Scanner',     run_sqli),
@@ -180,6 +206,9 @@ MENU_ITEMS = [
     ('10', 'SSL/TLS Auditor',               run_sslaudit),
     ('11', 'Content Discovery',             run_contentdiscovery),
     ('12', 'HIBP Credential Checker',       run_hibp),
+    ('13', 'Correlation Engine (Risk Chains)', run_correlate),
+    ('14', 'Risk Timeline (Drift Tracking)', run_risktimeline),
+    ('15', 'Exposure Story Report',         run_storyreport),
     ('0',  'Settings / Config',             edit_config),
     ('u',  'Check Update',                  check_update),
 ]

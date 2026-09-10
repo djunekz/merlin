@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.3] — 2026-09-11
+
+### Added
+- **`core/correlate.py`** — New Correlation Engine. Reads the JSON reports already saved by other Merlin modules (headergrab, sslaudit, techfinger, portscan, wpvuln, dnslookup, whoislookup, contentdiscovery, webanalyst, hibpcheck, websqli, webshake) for a given target and cross-references them with a rule-based engine to surface "risk chains" — combinations of individually low/medium findings that become critical together (e.g. missing HSTS + weak TLS protocols = downgrade surface; vulnerable CMS + exposed DB port = direct compromise path; reflected input + no CSP = uncontained XSS blast radius). Produces a combined 0–100 risk score with a letter grade, a plain-language narrative and fix per finding, and its own `correlate_{domain}.json` report. Does not scan or exploit anything itself — it only reads reports already on disk.
+- **`core/risktimeline.py`** — New Risk Timeline module. Takes a lightweight snapshot of a target's posture (security headers, TLS grade, certificate expiry, fingerprinted versions, open ports, WordPress vulnerabilities, exposed files, combined correlation score) from existing reports, appends it to a per-domain `history_{domain}.json`, and diffs it against the previous snapshot to flag drift — regressions (▲), improvements (▼), and neutral changes (●). Supports `--show` to print the recorded timeline without taking a new snapshot.
+- **`core/storyreport.py`** — New Exposure Storytelling Report module. Reassembles the same underlying data used by the Correlation Engine into a plain-language narrative (`story_{domain}.md`) aimed at non-technical stakeholders: who owns the domain, what a visitor's browser sees, what's running under the hood, how big the attack surface is, what a crawl turns up, known issues on record, breach exposure, a synthesized "combined picture" of the top risk chains, and a bottom-line top-3 fix list.
+- **`merlin.py`** — New menu items `[13] Correlation Engine (Risk Chains)`, `[14] Risk Timeline (Drift Tracking)`, `[15] Exposure Story Report`.
+
+---
+
 ## [1.1.2] — 2026-05-16
 
 ### Fixed

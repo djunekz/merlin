@@ -12,7 +12,7 @@
 
 **Website Vulnerability Scanner for Termux & Linux**
 
-[![Version](https://img.shields.io/badge/version-1.1.0-brightgreen?style=flat-square)](https://github.com/djunekz/merlin)
+[![Version](https://img.shields.io/badge/version-1.1.2-brightgreen?style=flat-square)](https://github.com/djunekz/merlin)
 [![Python](https://img.shields.io/badge/python-3.x-blue?style=flat-square)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/platform-Termux%20%7C%20Linux-orange?style=flat-square)](https://termux.dev/)
 [![License](https://img.shields.io/badge/license-MIT-yellow?style=flat-square)](LICENSE)
@@ -52,6 +52,9 @@
 | **WAF Detect** | Web Application Firewall identification from headers and response patterns |
 | **Content Discovery** | Probe 40+ sensitive file paths — `.env`, `.git`, `backup.zip`, `config.php`, and more |
 | **HIBP Check** | Leaked credential lookup via HaveIBeenPwned API (k-anonymity, no plain-text password sent) |
+| **Correlation Engine** | Cross-references reports from every other module and surfaces "risk chains" — combinations of individually minor findings that become critical together (e.g. missing HSTS + weak TLS = downgrade surface; vulnerable CMS + exposed DB port = direct compromise path). Outputs a combined 0–100 risk score with letter grade |
+| **Risk Timeline** | Snapshots a target's posture on every run and diffs it against the last one — flags regressions (▲), improvements (▼), and neutral changes (●): new open ports, certificates nearing expiry, header regressions, new/resolved vulnerabilities, and combined score movement over time |
+| **Exposure Story Report** | Turns the same underlying data into a plain-language narrative (Markdown) for non-technical stakeholders — what an outsider could learn about the target, synthesized into a "combined picture" of the top risk chains and a bottom-line top-3 fix list |
 | **Settings** | Persistent JSON config — 15+ options including proxy, HIBP API key, report format, crawl depth |
 | **Update Checker** | Auto-detect latest version from GitHub and pull updates via git |
 
@@ -72,7 +75,7 @@ merlin/
 ├── SECURITY.md
 ├── core/                      # Python source modules
 │   ├── __init__.py            # Version & author — single source of truth
-│   ├── merlin.py              # Main menu & router (14 options)
+│   ├── merlin.py              # Main menu & router (15 options)
 │   ├── merlincolor.py         # ANSI color constants
 │   ├── merlinset.py           # Shared variables (version, author, prompts)
 │   ├── merlinlogo.py          # ASCII banner & menu strings
@@ -90,7 +93,10 @@ merlin/
 │   ├── sslaudit.py            # SSL/TLS audit
 │   ├── wafdetect.py           # WAF detection
 │   ├── hibpcheck.py           # HaveIBeenPwned credential check
-│   └── contentdiscovery.py    # Sensitive file discovery
+│   ├── contentdiscovery.py    # Sensitive file discovery
+│   ├── correlate.py           # Correlation Engine — cross-module risk chains
+│   ├── risktimeline.py        # Risk Timeline — posture snapshots & drift detection
+│   └── storyreport.py         # Exposure Storytelling Report — plain-language narrative
 └── .github/
     ├── ISSUE_TEMPLATE/
     │   ├── bug_report.md
@@ -172,23 +178,53 @@ cd core && python merlin.py
 ### Menu Options
 
 ```
-[1]  Check WP Vuln          — WordPress vulnerability scan
-[2]  Check SQLi / XSS       — SQL injection + XSS + SSTI + Path Traversal
+[1]  WP Vulnerability Scan  — WordPress vulnerability scan
+[2]  SQLi / XSS / SSTI      — SQL injection + XSS + SSTI + Path Traversal
 [3]  WebShake / Crawler     — Web crawler & recon
-[4]  Web Analyzer           — Full web stack audit (14 modules)
+[4]  Web Security Analyzer  — Full web stack audit (14 modules)
 [5]  Port Scanner           — Multi-thread port scan + banner grab
-[6]  DNS Lookup             — Full DNS records + subdomain enumeration
-[7]  WHOIS Lookup           — Domain registration info + abuse contact
+[6]  DNS Deep Lookup        — Full DNS records + subdomain enumeration
+[7]  WHOIS Deep Lookup      — Domain registration info + abuse contact
 [8]  Tech Fingerprint       — Identify 70+ technologies
-[9]  Header Grabber         — Security header grading A+ to F
-[10] SSL Audit              — Certificate & cipher suite check
-[11] WAF Detect             — Web Application Firewall identification
-[12] Content Discovery      — Scan for exposed sensitive files
-[13] HIBP Check             — Leaked credential lookup
-[14] Settings / Config      — Edit scanner configuration
-[15] Check Update           — Check and pull latest version
+[9]  HTTP Header Analyzer   — Security header grading A+ to F
+[10] SSL/TLS Auditor        — Certificate & cipher suite check
+[11] Content Discovery      — Scan for exposed sensitive files
+[12] HIBP Credential Checker — Leaked credential lookup
+[13] Correlation Engine     — Cross-module risk chains + combined risk score
+[14] Risk Timeline          — Posture snapshots + drift tracking over time
+[15] Exposure Story Report  — Plain-language narrative report for stakeholders
+[0]  Settings / Config      — Edit scanner configuration
+[u]  Check Update           — Check and pull latest version
 [x]  Exit
 ```
+
+> Modules `[13]`–`[15]` read the JSON reports already saved by `[1]`–`[12]` — run at least a couple of scans against a target before using them, or they'll tell you there's nothing to correlate yet.
+
+---
+
+<div align="center">
+  <h1>Correlation, Timeline & Story Reports</h1>
+</div>
+
+`[13]`, `[14]`, and `[15]` don't scan anything themselves — they read the JSON reports that scans `[1]`–`[12]` already saved to `output_dir`, and turn that raw data into something more useful. Typical workflow against one target:
+
+```bash
+cd core
+python merlin.py
+# run [9] Header Analyzer, [10] SSL Auditor, [8] Tech Fingerprint,
+# [5] Port Scanner, [1] WP Vuln Scan, [6] DNS Lookup, [11] Content Discovery, ...
+# (any subset works — each rule/section just skips if its data isn't there)
+
+# then:
+[13]  Correlation Engine     -> combined risk score + cross-module risk chains
+[14]  Risk Timeline          -> snapshot + drift vs. the last run (re-run [14] over time)
+[15]  Exposure Story Report  -> plain-language .md report for stakeholders
+```
+
+Each writes its own report to `output_dir`:
+- `correlate_{domain}.json` — findings, combined score/grade
+- `history_{domain}.json` — append-only snapshot history (use `[14]` with "show history" to review it)
+- `story_{domain}.md` — the narrative report, ready to paste into a client deliverable or convert to PDF/Word
 
 ---
 
@@ -196,7 +232,7 @@ cd core && python merlin.py
   <h1>Configuration</h1>
 </div>
 
-Settings are stored in `core/merlin_config.json` and can be edited from within the tool via **[14] Settings / Config**.
+Settings are stored in `core/merlin_config.json` and can be edited from within the tool via **[0] Settings / Config**.
 
 | Key | Default | Description |
 |---|---|---|
@@ -274,7 +310,7 @@ This project is licensed under the MIT License — see [LICENSE](LICENSE) for de
 | CVE lookup integration | Query NVD/NIST API directly from WP plugin/theme scan results |
 | Batch URL scanning | Accept a `.txt` file of multiple URLs and scan them in sequence |
 | Proxy authentication | Proxy with `username:password` credentials not yet supported |
-| Scheduled scan / cron mode | Run scans automatically on a schedule and diff results against previous runs |
+| Scheduled scan / cron mode | ~~Run scans automatically on a schedule and diff results against previous runs~~ — drift detection now covered by `[14] Risk Timeline`; still need actual cron/scheduler wiring to auto re-run scans |
 | Plugin system | Allow external modules to be dropped in without editing `merlin.py` directly |
 | TUI (Terminal UI) | More interactive interface using `curses` or `rich` layout instead of plain input/print |
 | PDF report export | Print-ready PDF report output |
