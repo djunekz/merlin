@@ -30,19 +30,31 @@ not to be used in any illegal manner without the owner's consent.{}
            LR,W,LR,W,LR,W,LR,W,LR,W,LR,W,LR,W,LR,W,LR,W,LR,W,
            LM,D,W,LB,D,U,__github__,N,D,W,N,LM)
 
-menu = """{}[{}1{}]{}{} Check WP Vuln{}
-{}[{}2{}]{}{} Check SQLi Vuln{}
-{}[{}3{}]{}{} WebShake / Crawler{}
-{}[{}4{}]{}{} Web Analyzer{}
-{}[{}5{}]{}{} Port Scanner{}
-{}[{}6{}]{}{} DNS Lookup{}
-{}[{}7{}]{}{} WHOIS Lookup{}
-{}[{}8{}]{}{} Tech Fingerprint{}
-{}[{}9{}]{}{} HTTP Header Grab{}
+menu = """{}[{}1{}]{}{} WP Vulnerability Scan{}
+{}[{}2{}]{}{} SQLi / XSS / SSTI Scanner{}
+{}[{}3{}]{}{} WebShake / Crawler & Recon{}
+{}[{}4{}]{}{} Web Security Analyzer{}
+{}[{}5{}]{}{} Port Scanner + Fingerprint{}
+{}[{}6{}]{}{} DNS Deep Lookup & Recon{}
+{}[{}7{}]{}{} WHOIS Deep Lookup{}
+{}[{}8{}]{}{} Technology Fingerprint{}
+{}[{}9{}]{}{} HTTP Header Analyzer{}
+{}[{}10{}]{}{} SSL/TLS Auditor{}
+{}[{}11{}]{}{} Content Discovery{}
+{}[{}12{}]{}{} HIBP Credential Checker{}
+{}[{}13{}]{}{} Correlation Engine (Risk Chains){}
+{}[{}14{}]{}{} Risk Timeline (Drift Tracking){}
+{}[{}15{}]{}{} Exposure Story Report{}
 {}[{}0{}]{}{} Settings / Config{}
 {}[{}u{}]{}{} Check Update{}
 {}[{}x{}]{}{} exit{}
 """.format(
+    G,W,G,LY,D,N,
+    G,W,G,LY,D,N,
+    G,W,G,LY,D,N,
+    G,W,G,LY,D,N,
+    G,W,G,LY,D,N,
+    G,W,G,LY,D,N,
     G,W,G,LY,D,N,
     G,W,G,LY,D,N,
     G,W,G,LY,D,N,

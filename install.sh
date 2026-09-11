@@ -88,6 +88,9 @@ PIP_DEPS=(
     "lxml"
     "urllib3"
     "rich"
+    "dnspython"
+    "python-whois"
+    "pyyaml"
 )
 
 

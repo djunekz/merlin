@@ -1,0 +1,43 @@
+# .merlinpolicy.yml — example Config-as-Code policy for Merlin's Policy Gate ([16] / policycheck.py)
+#
+# Copy this to .merlinpolicy.yml at the root of the repo/project you're gating,
+# adjust the thresholds, then run:
+#
+#   cd core && python policycheck.py -d example.com -p ../.merlinpolicy.yml
+#
+# Exit code is 0 if every rule passes, 1 if anything violates policy, 2 on a
+# setup error (missing policy file, missing reports, bad YAML). That exit
+# code is what makes this usable as a CI/CD gate -- see the README section
+# "Correlation, Timeline & Story Reports" for a GitHub Actions example.
+#
+# Every section below is optional -- omit a section entirely to skip that
+# check. Each check silently skips (rather than failing) if the underlying
+# module report doesn't exist yet, EXCEPT `headers` and `ssl`, which fail
+# loudly if their report is missing, since those are usually mandatory checks.
+
+policy:
+  headers:
+    require:
+      - Strict-Transport-Security
+      - Content-Security-Policy
+      - X-Frame-Options
+      - X-Content-Type-Options
+
+  ssl:
+    min_grade: B                       # A, B, C, D, E, F -- fails if grade is worse than this
+    disallow_protocols: [TLSv1, TLSv1.1]
+    min_cert_days_left: 14             # fail if the certificate expires within this many days
+
+  wpvuln:
+    max_allowed: 0                     # fail if more than this many WordPress issues are found
+    max_severity: MEDIUM               # fail if anything worse than this severity is present
+
+  ports:
+    disallow: [21, 23, 3306, 5432, 6379, 27017]   # FTP, Telnet, MySQL, Postgres, Redis, MongoDB
+
+  content:
+    disallow_exposed_files: true       # fail if backup/.env/config-like files are directly downloadable
+
+  correlate:
+    max_score: 40                      # fail if the Correlation Engine's combined risk score exceeds this
+    disallow_severity: [CRITICAL]      # fail if any correlated risk chain is at this severity

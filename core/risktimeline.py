@@ -47,6 +47,7 @@ def _save_history(output_dir, domain, history):
 
 
 def build_snapshot(reports, domain, output_dir):
+    """Reduce full reports down to the small set of trackable fields."""
     snap = {'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 'domain': domain}
 
     headers = reports.get('headers', {}).get('results', {})
@@ -86,6 +87,7 @@ def build_snapshot(reports, domain, output_dir):
                    if any(k in str(f.get('path', '')).lower() for k in crit_kw)]
         snap['exposed_files'] = sorted(exposed)
 
+    # pull in the combined score from correlate.py's own saved report, if present
     corr_path = os.path.join(output_dir, f"correlate_{_norm(domain)}.json")
     if os.path.exists(corr_path):
         try:

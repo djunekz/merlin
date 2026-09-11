@@ -57,6 +57,7 @@
 | **Correlation Engine** | Cross-references reports from every other module and surfaces "risk chains" — combinations of individually minor findings that become critical together (e.g. missing HSTS + weak TLS = downgrade surface; vulnerable CMS + exposed DB port = direct compromise path). Outputs a combined 0–100 risk score with letter grade |
 | **Risk Timeline** | Snapshots a target's posture on every run and diffs it against the last one — flags regressions (▲), improvements (▼), and neutral changes (●): new open ports, certificates nearing expiry, header regressions, new/resolved vulnerabilities, and combined score movement over time |
 | **Exposure Story Report** | Turns the same underlying data into a plain-language narrative (Markdown) for non-technical stakeholders — what an outsider could learn about the target, synthesized into a "combined picture" of the top risk chains and a bottom-line top-3 fix list |
+| **Policy Gate** | Config-as-Code enforcement via `.merlinpolicy.yml` — define required headers, minimum TLS grade, disallowed ports, max allowed CVEs, max combined risk score, etc. Exits non-zero on violation, so it can be dropped straight into a CI/CD pipeline as a build gate |
 | **Settings** | Persistent JSON config — 15+ options including proxy, HIBP API key, report format, crawl depth |
 | **Update Checker** | Auto-detect latest version from GitHub and pull updates via git |
 
@@ -98,7 +99,9 @@ merlin/
 │   ├── contentdiscovery.py    # Sensitive file discovery
 │   ├── correlate.py           # Correlation Engine — cross-module risk chains
 │   ├── risktimeline.py        # Risk Timeline — posture snapshots & drift detection
-│   └── storyreport.py         # Exposure Storytelling Report — plain-language narrative
+│   ├── storyreport.py         # Exposure Storytelling Report — plain-language narrative
+│   └── policycheck.py         # Policy Gate — Config-as-Code enforcement for CI/CD
+├── .merlinpolicy.example.yml  # Example policy file for the Policy Gate
 └── .github/
     ├── ISSUE_TEMPLATE/
     │   ├── bug_report.md
@@ -141,7 +144,7 @@ merlin
 #### Termux
 ```bash
 pkg update && pkg install python git
-pip install requests colorama beautifulsoup4 lxml urllib3 dnspython python-whois
+pip install requests colorama beautifulsoup4 lxml urllib3 dnspython python-whois pyyaml
 git clone https://github.com/djunekz/merlin
 cd merlin
 bash merlin.sh
@@ -150,7 +153,7 @@ bash merlin.sh
 #### Linux
 ```bash
 sudo apt-get update && sudo apt-get install python3 python3-pip git
-pip3 install requests colorama beautifulsoup4 lxml urllib3 dnspython python-whois
+pip3 install requests colorama beautifulsoup4 lxml urllib3 dnspython python-whois pyyaml
 git clone https://github.com/djunekz/merlin
 cd merlin
 bash merlin.sh
@@ -195,12 +198,13 @@ cd core && python merlin.py
 [13] Correlation Engine     — Cross-module risk chains + combined risk score
 [14] Risk Timeline          — Posture snapshots + drift tracking over time
 [15] Exposure Story Report  — Plain-language narrative report for stakeholders
+[16] Policy Gate            — Config-as-Code enforcement (CI/CD build gate)
 [0]  Settings / Config      — Edit scanner configuration
 [u]  Check Update           — Check and pull latest version
 [x]  Exit
 ```
 
-> Modules `[13]`–`[15]` read the JSON reports already saved by `[1]`–`[12]` — run at least a couple of scans against a target before using them, or they'll tell you there's nothing to correlate yet.
+> Modules `[13]`–`[16]` read the JSON reports already saved by `[1]`–`[12]` — run at least a couple of scans against a target before using them, or they'll tell you there's nothing to correlate yet.
 
 ---
 
@@ -227,6 +231,25 @@ Each writes its own report to `output_dir`:
 - `correlate_{domain}.json` — findings, combined score/grade
 - `history_{domain}.json` — append-only snapshot history (use `[14]` with "show history" to review it)
 - `story_{domain}.md` — the narrative report, ready to paste into a client deliverable or convert to PDF/Word
+
+### Policy Gate ([16]) — using it as a CI/CD build gate
+
+`[16] Policy Gate` reads a `.merlinpolicy.yml` (or `.yaml`/`.json`) file and checks the same reports against thresholds you define — required headers, minimum TLS grade, disallowed ports, max allowed CVEs, max combined risk score, and more. See [`.merlinpolicy.example.yml`](.merlinpolicy.example.yml) for the full option list. It exits `0` on pass, `1` on any violation, `2` on a setup error (missing policy/reports) — which makes it a natural fit for CI:
+
+```yaml
+# .github/workflows/security-gate.yml
+- name: Run Merlin scans
+  run: |
+    cd core
+    python headergrab.py -u https://example.com
+    python sslaudit.py -u example.com
+    python portscan.py -t example.com
+    python wpvuln.py -u https://example.com
+
+- name: Enforce security policy
+  run: cd core && python policycheck.py -d example.com -p ../.merlinpolicy.yml
+  # non-zero exit here fails the workflow
+```
 
 ---
 
@@ -260,7 +283,7 @@ Settings are stored in `core/merlin_config.json` and can be edited from within t
 
 - Python 3.6+
 - Git
-- pip packages: `requests`, `colorama`, `beautifulsoup4`, `lxml`, `urllib3`, `dnspython`, `python-whois`
+- pip packages: `requests`, `colorama`, `beautifulsoup4`, `lxml`, `urllib3`, `dnspython`, `python-whois`, `pyyaml` (optional — only needed for YAML policy files; JSON policy files work without it)
 
 ---
 
@@ -289,12 +312,12 @@ This project is licensed under the MIT License — see [LICENSE](LICENSE) for de
 > Things that are missing, incomplete, or need further work before the next release.
 
 ### Critical — Must Fix
-| Item | Notes |
-|---|---|
-| `install.sh` not updated | Missing new dependencies: `dnspython` and `python-whois`. Without them, the DNS and WHOIS modules will crash immediately on a fresh install |
-| `merlin.sh` out of sync | The loading screen still references 6 modules; it needs to reflect the current 14+ |
-| `merlinlogo.py` out of sync | The ASCII menu in the logo still shows the old 6-option layout, not matching the actual `merlin.py` menu |
-| `webshakeset.py` needs review | Unclear whether the `min` variable shadowing built-in `min()` was fixed here; requires a manual check |
+> All resolved as of this update.
+
+- ~~`install.sh` not updated~~ — `dnspython` and `python-whois` added to `PIP_DEPS` across all four install paths (Termux/Debian/Arch/Fedora)
+- ~~`merlin.sh` out of sync~~ — the loading screen only ever showed a generic "Loading modules..." spinner, it never listed module names, so there was nothing to desync — verified clean
+- ~~`merlinlogo.py` out of sync~~ — the static `menu` ASCII string has been updated to list all 15 scan modules plus Settings/Update/Exit (note: `merlin.py` actually renders its menu dynamically from `MENU_ITEMS` and doesn't use this string, but it's now accurate for anyone importing it directly)
+- ~~`webshakeset.py` needs review~~ — checked: the variable is `min_pfx`, not `min`; it never shadowed the built-in. Confirmed `webshake.py` doesn't use `min()` either. Non-issue, closed
 
 ### Important — Incomplete
 | Item | Notes |

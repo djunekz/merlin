@@ -193,6 +193,17 @@ def run_storyreport():
     out = _prompt('story_output').strip() or OUTPUT_DIR
     _run('storyreport.py', f'-d "{domain}" -o "{out}"')
 
+def run_policycheck():
+    domain = _get_domain('policy')
+    if not domain:
+        return
+    print(note + ' Policy file [auto-detect .merlinpolicy.yml/.yaml/.json]: \n', end='')
+    policy = _prompt('policy_path').strip()
+    policy_arg = f'-p "{policy}"' if policy else ''
+    print(note + f' Reports dir [{OUTPUT_DIR}]: \n', end='')
+    out = _prompt('policy_output').strip() or OUTPUT_DIR
+    _run('policycheck.py', f'-d "{domain}" -o "{out}" {policy_arg}')
+
 MENU_ITEMS = [
     ('1',  'WP Vulnerability Scan',         run_wpvuln),
     ('2',  'SQLi / XSS / SSTI Scanner',     run_sqli),
@@ -209,6 +220,7 @@ MENU_ITEMS = [
     ('13', 'Correlation Engine (Risk Chains)', run_correlate),
     ('14', 'Risk Timeline (Drift Tracking)', run_risktimeline),
     ('15', 'Exposure Story Report',         run_storyreport),
+    ('16', 'Policy Gate (CI/CD Check)',     run_policycheck),
     ('0',  'Settings / Config',             edit_config),
     ('u',  'Check Update',                  check_update),
 ]

@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.4] — 2026-09-11
+
+### Added
+- **`core/policycheck.py`** — New Policy Gate module (Config-as-Code). Reads a `.merlinpolicy.yml`/`.yaml`/`.json` file defining thresholds (required security headers, minimum TLS grade, disallowed TLS protocols, minimum certificate days left, max allowed WordPress CVEs and severity, disallowed open ports, exposed backup/config files, max combined risk score, disallowed correlated-finding severities) and checks them against existing reports. Exits `0` on pass, `1` on any violation, `2` on a setup error — built to be dropped straight into a CI/CD pipeline as a build gate. Falls back to JSON-only policy files if PyYAML isn't installed. Saves its own `policy_{domain}.json` report.
+- **`.merlinpolicy.example.yml`** — Example policy file documenting every Policy Gate option.
+- **`merlin.py`** — New menu items `[13] Correlation Engine (Risk Chains)`, `[14] Risk Timeline (Drift Tracking)`, `[15] Exposure Story Report`, `[16] Policy Gate (CI/CD Check)`.
+
+### Fixed
+- `install.sh` — added missing `dnspython` and `python-whois` to `PIP_DEPS` (all 4 install paths: Termux, Debian/apt, Arch, Fedora). DNS/WHOIS modules previously had no dependencies installed for them via the quick installer.
+- `core/merlinlogo.py` — the static `menu` string was showing a stale 9-module menu; updated to list all 15 scan modules plus Settings/Update/Exit.
+- Verified `webshakeset.py`'s `min_pfx` variable never shadowed the built-in `min()` (previously flagged as unclear in the README) — confirmed clean, no code change needed.
+
+---
+
 ## [1.1.3] — 2026-09-11
 
 ### Added
