@@ -4,7 +4,8 @@
 
 | Version | Supported |
 |---------|-----------|
-| 1.0.x   | ✅ Yes     |
+| 1.1.5+  | ✅ Yes     |
+| < 1.1.5 | ❌ No (CVE pending: OS command injection, CWE-78) |
 
 Only the latest release receives security fixes. We strongly recommend always running the latest version.
 

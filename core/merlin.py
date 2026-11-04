@@ -1,4 +1,5 @@
-import os, sys, time
+import os, re, sys, time
+from urllib.parse import urlsplit
 from merlinset import *
 from merlincolor import *
 from merlinconf import *
@@ -15,26 +16,52 @@ def _prompt(ctx='merlin'):
     except (EOFError, KeyboardInterrupt):
         return ''
 
+_HOST_RE = re.compile(r'^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$|^\[[0-9A-Fa-f:.]+\]$')
+
+def _valid_host(host):
+    return bool(host) and bool(_HOST_RE.match(host))
+
+def _valid_url(url):
+    if not url or any(c.isspace() or ord(c) < 32 or c in '`"\'\\<>|;$' for c in url):
+        return False
+    try:
+        parts = urlsplit(url)
+        _ = parts.port  # raises ValueError on a bad port
+    except ValueError:
+        return False
+    host = parts.hostname or ''
+    ipv6 = ':' in host and re.fullmatch(r'[0-9A-Fa-f:.]+', host) is not None
+    return parts.scheme in ('http', 'https') and (ipv6 or _valid_host(host))
+
 def _get_url(ctx='scan'):
     print(note + ' Enter target URL (http:// or https://):')
-    url = _prompt(ctx)
+    url = _prompt(ctx).strip()
     if not url:
         print(err + ' No URL entered.')
         return None
     if not (url.startswith('http://') or url.startswith('https://')):
         url = 'https://' + url
+    if not _valid_url(url):
+        print(err + ' Invalid target URL (illegal characters or malformed host).')
+        return None
     return url
 
 def _get_domain(ctx='lookup'):
     print(note + ' Enter domain (e.g. example.com):\n')
-    domain = _prompt(ctx)
-    return domain.strip() if domain else None
+    domain = _prompt(ctx).strip()
+    if not domain:
+        return None
+    if not _valid_host(domain):
+        print(err + ' Invalid domain.')
+        return None
+    return domain
 
-def _run(script, args=''):
+def _run(script, args=None):
     import subprocess, signal
-    cmd = f'python {script} {args}' if args else f'python {script}'
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), script)
+    cmd = [sys.executable, path] + [str(a) for a in (args or [])]
     try:
-        subprocess.run(cmd, shell=True)
+        subprocess.run(cmd, check=False)
     except KeyboardInterrupt:
         print(f'\n{note} Scan interrupted. Returning to menu...{N}')
     finally:
@@ -53,7 +80,7 @@ def run_wpvuln():
         return
     print(note + f' Output dir [{OUTPUT_DIR}]: \n', end='')
     out = _prompt('wp_output').strip() or OUTPUT_DIR
-    _run('wpvuln.py', f'-u "{url}" -o "{out}"')
+    _run('wpvuln.py', ['-u', url, '-o', out])
 
 def run_sqli():
     url = _get_url('sqli_xss')
@@ -61,7 +88,7 @@ def run_sqli():
         return
     print(note + ' Deep scan? [y/N]: \n', end='')
     deep = '--deep' if _prompt('sqli_deep').strip().lower() in ('y','yes') else ''
-    _run('websqli.py', f'-u "{url}" {deep}')
+    _run('websqli.py', ['-u', url] + ([deep] if deep else []))
 
 def run_webshake():
     url = _get_url('crawler')
@@ -70,7 +97,7 @@ def run_webshake():
     print(note + f' Crawl depth [default 2]: \n', end='')
     depth = _prompt('depth').strip()
     depth = depth if depth.isdigit() else '2'
-    _run('webshake.py', f'-u "{url}" -d {depth}')
+    _run('webshake.py', ['-u', url, '-d', depth])
 
 def run_webanalyst():
     url = _get_url('analyzer')
@@ -78,7 +105,7 @@ def run_webanalyst():
         return
     print(note + ' Quick mode (skip slow checks)? [y/N]: \n', end='')
     quick = '--quick' if _prompt('quick').strip().lower() in ('y','yes') else ''
-    _run('webanalyst.py', f'-u "{url}" {quick}')
+    _run('webanalyst.py', ['-u', url] + ([quick] if quick else []))
 
 def run_portscan():
     url = _get_url('portscan')
@@ -86,11 +113,14 @@ def run_portscan():
         return
     print(note + ' Port preset [common/web/db/mail/remote/full] or range (e.g. 1-1024):')
     ports = _prompt('ports').strip() or 'common'
+    if not re.fullmatch(r'[A-Za-z]+|[0-9]+([-,][0-9]+)*', ports):
+        print(err + ' Invalid port preset/range.')
+        return
     print(note + ' Banner grab? [y/N]: \n', end='')
     grab = '--grab-banners' if _prompt('grab').strip().lower() in ('y','yes') else ''
     print(note + ' HTTP probe on web ports? [y/N]: \n', end='')
     http = '--http-probe' if _prompt('http').strip().lower() in ('y','yes') else ''
-    _run('portscan.py', f'-u "{url}" -p {ports} {grab} {http}')
+    _run('portscan.py', ['-u', url, '-p', ports] + [f for f in (grab, http) if f])
 
 def run_dns():
     domain = _get_domain('dns')
@@ -99,19 +129,19 @@ def run_dns():
     print(note + ' Run all checks? (zone transfer, subdomains, email sec) [Y/n]: \n', end='')
     a = _prompt('dns_mode').strip().lower()
     flag = '--all' if a in ('', 'y', 'yes') else ''
-    _run('dnslookup.py', f'-d "{domain}" {flag}')
+    _run('dnslookup.py', ['-d', domain] + ([flag] if flag else []))
 
 def run_whois():
     domain = _get_domain('whois')
     if not domain:
         return
-    _run('whoislookup.py', f'-d "{domain}"')
+    _run('whoislookup.py', ['-d', domain])
 
 def run_techfinger():
     url = _get_url('techfinger')
     if not url:
         return
-    _run('techfinger.py', f'-u "{url}"')
+    _run('techfinger.py', ['-u', url])
 
 def run_headergrab():
     url = _get_url('headers')
@@ -119,13 +149,13 @@ def run_headergrab():
         return
     print(note + ' Compare HTTP vs HTTPS redirect? [y/N]: \n', end='')
     cmp = '--compare-http' if _prompt('cmp').strip().lower() in ('y','yes') else ''
-    _run('headergrab.py', f'-u "{url}" {cmp}')
+    _run('headergrab.py', ['-u', url] + ([cmp] if cmp else []))
 
 def run_sslaudit():
     url = _get_url('ssl_audit')
     if not url:
         return
-    _run('sslaudit.py', f'-u "{url}" --check-protocols')
+    _run('sslaudit.py', ['-u', url, '--check-protocols'])
 
 def run_contentdiscovery():
     url = _get_url('content_disc')
@@ -133,11 +163,10 @@ def run_contentdiscovery():
         return
     print(note + ' Custom wordlist file path? (leave blank for built-in): \n', end='')
     wl = _prompt('wordlist').strip()
-    wl_flag = f'-w "{wl}"' if wl else ''
     print(note + ' Threads [default 10]: \n', end='')
     t = _prompt('threads').strip()
     t = t if t.isdigit() else '10'
-    _run('contentdiscovery.py', f'-u "{url}" -t {t} {wl_flag}')
+    _run('contentdiscovery.py', ['-u', url, '-t', t] + (['-w', wl] if wl else []))
 
 def run_hibp():
     print(f"""
@@ -149,12 +178,12 @@ def run_hibp():
 """)
     sub = _prompt('hibp').strip()
     if sub == '1':
-        _run('hibpcheck.py', 'password')
+        _run('hibpcheck.py', ['password'])
     elif sub == '2':
         print(note + ' Path to password list file: ', end='')
         fp = _prompt('hibp_file').strip()
         if fp:
-            _run('hibpcheck.py', f'file -f "{fp}"')
+            _run('hibpcheck.py', ['file', '-f', fp])
     elif sub == '3':
         print(note + ' Email address: ', end='')
         email = _prompt('hibp_email').strip()
@@ -163,9 +192,9 @@ def run_hibp():
         print(note + ' HIBP API key (get at haveibeenpwned.com/API/Key): \n', end='')
         key = _prompt('hibp_key').strip()
         if email and key:
-            _run('hibpcheck.py', f'email -e "{email}" -k "{key}"')
+            _run('hibpcheck.py', ['email', '-e', email, '-k', key])
         elif email:
-            _run('hibpcheck.py', f'email -e "{email}"')
+            _run('hibpcheck.py', ['email', '-e', email])
 
 def run_correlate():
     domain = _get_domain('correlate')
@@ -173,7 +202,7 @@ def run_correlate():
         return
     print(note + f' Reports dir [{OUTPUT_DIR}]: \n', end='')
     out = _prompt('correlate_output').strip() or OUTPUT_DIR
-    _run('correlate.py', f'-d "{domain}" -o "{out}"')
+    _run('correlate.py', ['-d', domain, '-o', out])
 
 def run_risktimeline():
     domain = _get_domain('timeline')
@@ -183,7 +212,7 @@ def run_risktimeline():
     show = '--show' if _prompt('timeline_show').strip().lower() in ('y', 'yes') else ''
     print(note + f' Reports dir [{OUTPUT_DIR}]: \n', end='')
     out = _prompt('timeline_output').strip() or OUTPUT_DIR
-    _run('risktimeline.py', f'-d "{domain}" -o "{out}" {show}')
+    _run('risktimeline.py', ['-d', domain, '-o', out] + ([show] if show else []))
 
 def run_storyreport():
     domain = _get_domain('story')
@@ -191,7 +220,7 @@ def run_storyreport():
         return
     print(note + f' Reports dir [{OUTPUT_DIR}]: \n', end='')
     out = _prompt('story_output').strip() or OUTPUT_DIR
-    _run('storyreport.py', f'-d "{domain}" -o "{out}"')
+    _run('storyreport.py', ['-d', domain, '-o', out])
 
 def run_policycheck():
     domain = _get_domain('policy')
@@ -199,10 +228,9 @@ def run_policycheck():
         return
     print(note + ' Policy file [auto-detect .merlinpolicy.yml/.yaml/.json]: \n', end='')
     policy = _prompt('policy_path').strip()
-    policy_arg = f'-p "{policy}"' if policy else ''
     print(note + f' Reports dir [{OUTPUT_DIR}]: \n', end='')
     out = _prompt('policy_output').strip() or OUTPUT_DIR
-    _run('policycheck.py', f'-d "{domain}" -o "{out}" {policy_arg}')
+    _run('policycheck.py', ['-d', domain, '-o', out] + (['-p', policy] if policy else []))
 
 MENU_ITEMS = [
     ('1',  'WP Vulnerability Scan',         run_wpvuln),

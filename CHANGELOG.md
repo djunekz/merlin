@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.5] — 2026-11-04
+
+### Security
+- **Fixed OS command injection (CWE-78) in `core/merlin.py`** affecting 1.0.0–1.1.4. `_run()` built a shell command string from user-supplied input (target URL, domain, output/report directory, wordlist path, HIBP file/email/API key, policy path) and executed it with a shell, so `$()`, backticks, `;` and newlines inside a target were expanded. `_run()` now takes an argument list and runs `subprocess.run([sys.executable, script, *args])` with **no shell**.
+- Added input validation: targets must be `http(s)` URLs with a clean host, domains must be valid hostnames, port presets/ranges are pattern-checked.
+- Reported by **Niranj R Mahaswar**. Thank you.
+
+### Changed
+- Sibling scripts are now resolved relative to `core/` instead of the current working directory.
+
+---
+
 ## [1.1.4] — 2026-09-11
 
 ### Added
